@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -32,11 +33,11 @@ import androidx.compose.foundation.Image
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import android.graphics.Bitmap
-import com.example.timemanager.data.model.AppUsage
 
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
+    onOpenLimits: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -45,6 +46,7 @@ fun HomeScreen(
         HomeUiState.Loading -> LoadingContent(modifier)
         is HomeUiState.Success -> UsageList(
             appUsages = state.appUsages,
+            onOpenLimits = onOpenLimits,
             modifier = modifier,
         )
         is HomeUiState.Error -> ErrorContent(
@@ -67,12 +69,13 @@ private fun LoadingContent(modifier: Modifier = Modifier) {
 
 @Composable
 private fun UsageList(
-    appUsages: List<AppUsage>,
+    appUsages: List<AppUsageWithLimit>,
+    onOpenLimits: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val usageSummary = remember(appUsages) {
         UsageSummary(
-            totalUsageMillis = appUsages.sumOf(AppUsage::usageTimeMillis),
+            totalUsageMinutes = appUsages.sumOf(AppUsageWithLimit::usedMinutes),
             mostUsedApp = appUsages.firstOrNull(),
         )
     }
@@ -98,9 +101,18 @@ private fun UsageList(
 
         item {
             UsageSummaryCard(
-                totalUsageMillis = usageSummary.totalUsageMillis,
+                totalUsageMinutes = usageSummary.totalUsageMinutes,
                 mostUsedApp = usageSummary.mostUsedApp,
             )
+        }
+
+        item {
+            Button(
+                onClick = onOpenLimits,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("设置每日额度")
+            }
         }
 
         if (appUsages.isEmpty()) {
@@ -120,8 +132,8 @@ private fun UsageList(
 
 @Composable
 private fun UsageSummaryCard(
-    totalUsageMillis: Long,
-    mostUsedApp: AppUsage?,
+    totalUsageMinutes: Long,
+    mostUsedApp: AppUsageWithLimit?,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -140,7 +152,7 @@ private fun UsageSummaryCard(
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
             )
             Text(
-                text = formatUsageDuration(totalUsageMillis),
+                text = formatUsageDuration(totalUsageMinutes),
                 style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
             )
@@ -148,7 +160,7 @@ private fun UsageSummaryCard(
                 text = if (mostUsedApp == null) {
                     "使用最多：暂无记录"
                 } else {
-                    "使用最多：${mostUsedApp.appName} · ${formatUsageDuration(mostUsedApp.usageTimeMillis)}"
+                    "使用最多：${mostUsedApp.appName} · ${formatUsageDuration(mostUsedApp.usedMinutes)}"
                 },
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -158,10 +170,7 @@ private fun UsageSummaryCard(
 }
 
 @Composable
-private fun UsageCard(appUsage: AppUsage) {
-    val usageMinutes = appUsage.usageTimeMillis / MILLIS_PER_MINUTE
-    val usageProgress = (usageMinutes.toFloat() / DEFAULT_DAILY_LIMIT_MINUTES)
-        .coerceIn(0f, 1f)
+private fun UsageCard(appUsage: AppUsageWithLimit) {
     val appIcon = remember(appUsage.appIcon) {
         appUsage.appIcon?.asImageBitmap()
     }
@@ -187,26 +196,52 @@ private fun UsageCard(appUsage: AppUsage) {
                     text = appUsage.appName,
                     style = MaterialTheme.typography.titleMedium,
                 )
-                Text(
-                    text = "今日使用 $usageMinutes 分钟",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    text = "$usageMinutes/$DEFAULT_DAILY_LIMIT_MINUTES 分钟",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                LinearProgressIndicator(
-                    progress = { usageProgress.coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth(),
-                    strokeCap = StrokeCap.Round,
-                    gapSize = 0.dp,
-                    drawStopIndicator = {},
-                )
+                UsageLimitContent(appUsage)
             }
         }
     }
+}
+
+@Composable
+private fun UsageLimitContent(appUsage: AppUsageWithLimit) {
+    val limitMinutes = appUsage.limitMinutes
+    if (limitMinutes == null) {
+        Text(
+            text = "今日使用：${appUsage.usedMinutes} 分钟",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        return
+    }
+
+    val remainingMinutes = (limitMinutes.toLong() - appUsage.usedMinutes).coerceAtLeast(0L)
+    val usageProgress = when {
+        limitMinutes <= 0 && appUsage.usedMinutes > 0 -> 1f
+        limitMinutes <= 0 -> 0f
+        else -> (appUsage.usedMinutes.toFloat() / limitMinutes).coerceIn(0f, 1f)
+    }
+
+    Text(
+        text = "${appUsage.usedMinutes} / $limitMinutes 分钟",
+        style = MaterialTheme.typography.bodyMedium,
+    )
+    Text(
+        text = "每日额度：$limitMinutes 分钟",
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Text(
+        text = "剩余时间：$remainingMinutes 分钟",
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    LinearProgressIndicator(
+        progress = { usageProgress },
+        modifier = Modifier.fillMaxWidth(),
+        strokeCap = StrokeCap.Round,
+        gapSize = 0.dp,
+        drawStopIndicator = {},
+    )
 }
 
 @Composable
@@ -248,16 +283,12 @@ private fun ErrorContent(
     }
 }
 
-private const val MILLIS_PER_MINUTE = 60_000L
-private const val DEFAULT_DAILY_LIMIT_MINUTES = 60
-
 private data class UsageSummary(
-    val totalUsageMillis: Long,
-    val mostUsedApp: AppUsage?,
+    val totalUsageMinutes: Long,
+    val mostUsedApp: AppUsageWithLimit?,
 )
 
-private fun formatUsageDuration(usageTimeMillis: Long): String {
-    val totalMinutes = usageTimeMillis / MILLIS_PER_MINUTE
+private fun formatUsageDuration(totalMinutes: Long): String {
     val hours = totalMinutes / 60
     val minutes = totalMinutes % 60
 
