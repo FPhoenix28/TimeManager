@@ -35,6 +35,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /** User-visible foreground service that owns the foreground-app monitoring loop. */
 class UsageMonitorService : Service() {
@@ -60,6 +62,7 @@ class UsageMonitorService : Service() {
     private var limitMinutesByPackage: Map<String, Int> = emptyMap()
     private var lastIdleUsageDayKey: String? = null
     private var lastIdleTrackedPackages: Set<String> = emptySet()
+    private val timingMutex = Mutex()
 
     override fun onCreate() {
         super.onCreate()
@@ -130,14 +133,18 @@ class UsageMonitorService : Service() {
                 foregroundAppDetector.detect(queryStartTime, now)?.let(::handleDetectedApp)
                 if (!powerManager.isInteractive) {
                     currentForegroundApp = null
-                    if (timedForegroundApp != null) {
-                        finishTrackedSession()
-                    } else {
-                        updateIdleNotificationIfNeeded()
+                    timingMutex.withLock {
+                        if (timedForegroundApp != null) {
+                            finishTrackedSession()
+                        } else {
+                            updateIdleNotificationIfNeeded()
+                        }
                     }
                 } else {
                     currentForegroundApp?.let { foregroundApp ->
-                        processForegroundApp(foregroundApp)
+                        timingMutex.withLock {
+                            processForegroundApp(foregroundApp)
+                        }
                     }
                 }
                 queryStartTime = now - EVENT_OVERLAP_MILLIS
@@ -151,6 +158,12 @@ class UsageMonitorService : Service() {
         trackedAppsJob = serviceScope.launch {
             trackedAppRepository.observeTrackedPackageNames().collect { packageNames ->
                 trackedPackageNames = packageNames
+                timingMutex.withLock {
+                    val timedApp = timedForegroundApp
+                    if (timedApp != null && timedApp.packageName !in packageNames) {
+                        finishTrackedSession()
+                    }
+                }
                 Log.d(TAG, "Tracked apps updated: ${packageNames.size}")
             }
         }

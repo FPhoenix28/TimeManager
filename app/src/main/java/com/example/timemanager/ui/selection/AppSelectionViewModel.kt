@@ -51,39 +51,19 @@ class AppSelectionViewModel(
                 }
                 .collect { trackedPackages ->
                     _uiState.value = AppSelectionUiState.Success(
-                        installedApps.map { app -> app.toTrackedApp(trackedPackages) },
+                        installedApps
+                            .filter { app -> app.packageName !in trackedPackages }
+                            .map { app -> app.toUntrackedApp() },
                     )
                 }
         }
     }
 
-    fun setTracked(packageName: String, isTracked: Boolean) {
-        updateSelection(packageName, isTracked)
-        viewModelScope.launch(Dispatchers.IO) {
-            runCatching {
-                trackedAppRepository.setTracked(packageName, isTracked)
-            }.onFailure { error ->
-                _uiState.value = AppSelectionUiState.Error(
-                    error.message ?: "保存目标应用失败",
-                )
-            }
-        }
-    }
-
-    private fun updateSelection(packageName: String, isTracked: Boolean) {
-        val state = _uiState.value as? AppSelectionUiState.Success ?: return
-        _uiState.value = state.copy(
-            apps = state.apps.map { app ->
-                if (app.packageName == packageName) app.copy(isTracked = isTracked) else app
-            },
-        )
-    }
-
-    private fun InstalledApp.toTrackedApp(trackedPackages: Set<String>) = TrackedApp(
+    private fun InstalledApp.toUntrackedApp() = TrackedApp(
         packageName = packageName,
         appName = appName,
         appIcon = appIcon,
-        isTracked = packageName in trackedPackages,
+        isTracked = false,
     )
 
     class Factory(

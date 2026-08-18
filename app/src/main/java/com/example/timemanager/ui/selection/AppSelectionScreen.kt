@@ -18,7 +18,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -39,6 +38,7 @@ import com.example.timemanager.data.model.TrackedApp
 fun AppSelectionScreen(
     viewModel: AppSelectionViewModel,
     onBack: () -> Unit,
+    onSelectApp: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -49,7 +49,7 @@ fun AppSelectionScreen(
         is AppSelectionUiState.Success -> AppSelectionList(
             apps = state.apps,
             onBack = onBack,
-            onTrackedChange = viewModel::setTracked,
+            onSelectApp = onSelectApp,
             modifier = modifier,
         )
         is AppSelectionUiState.Error -> ErrorContent(
@@ -65,7 +65,7 @@ fun AppSelectionScreen(
 private fun AppSelectionList(
     apps: List<TrackedApp>,
     onBack: () -> Unit,
-    onTrackedChange: (String, Boolean) -> Unit,
+    onSelectApp: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -80,9 +80,9 @@ private fun AppSelectionList(
             ) {
                 TextButton(onClick = onBack) { Text("返回") }
                 Column {
-                    Text("目标应用", style = MaterialTheme.typography.headlineSmall)
+                    Text("添加管理应用", style = MaterialTheme.typography.headlineSmall)
                     Text(
-                        text = "仅实时统计已勾选的应用",
+                        text = "选择应用后设置每日额度",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -101,7 +101,7 @@ private fun AppSelectionList(
             ) { app ->
                 TrackedAppCard(
                     app = app,
-                    onClick = { onTrackedChange(app.packageName, !app.isTracked) },
+                    onClick = { onSelectApp(app.packageName) },
                 )
             }
         }
@@ -132,10 +132,7 @@ private fun TrackedAppCard(app: TrackedApp, onClick: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Checkbox(
-                checked = app.isTracked,
-                onCheckedChange = null,
-            )
+            Text("选择", color = MaterialTheme.colorScheme.primary)
         }
     }
 }

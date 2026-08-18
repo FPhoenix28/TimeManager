@@ -74,13 +74,14 @@ class MainActivity : ComponentActivity() {
         val trackedAppRepository = TrackedAppRepository(
             TrackedAppPreferences(applicationContext),
         )
+        val usageTimeRepository = UsageTimeRepository(
+            usageRepository = UsageRepository(UsageStatsReader(applicationContext)),
+            preferences = RealtimeUsagePreferences(applicationContext),
+        )
         homeViewModel = ViewModelProvider(
             this,
             HomeViewModel.Factory(
-                usageTimeRepository = UsageTimeRepository(
-                    usageRepository = UsageRepository(UsageStatsReader(applicationContext)),
-                    preferences = RealtimeUsagePreferences(applicationContext),
-                ),
+                usageTimeRepository = usageTimeRepository,
                 limitRepository = limitRepository,
             ),
         )[HomeViewModel::class.java]
@@ -88,7 +89,9 @@ class MainActivity : ComponentActivity() {
             this,
             LimitViewModel.Factory(
                 installedAppRepository = installedAppRepository,
+                trackedAppRepository = trackedAppRepository,
                 limitRepository = limitRepository,
+                usageTimeRepository = usageTimeRepository,
             ),
         )[LimitViewModel::class.java]
         appSelectionViewModel = ViewModelProvider(
@@ -105,20 +108,28 @@ class MainActivity : ComponentActivity() {
                         when (destination) {
                             AppDestination.HOME -> HomeScreen(
                                 viewModel = homeViewModel,
-                                onOpenLimits = { destination = AppDestination.LIMITS },
-                                onOpenAppSelection = {
-                                    destination = AppDestination.APP_SELECTION
+                                onOpenManagement = {
+                                    limitViewModel.loadApps()
+                                    destination = AppDestination.LIMITS
                                 },
                                 modifier = Modifier.padding(innerPadding),
                             )
                             AppDestination.LIMITS -> LimitScreen(
                                 viewModel = limitViewModel,
                                 onBack = { destination = AppDestination.HOME },
+                                onAddApp = {
+                                    appSelectionViewModel.loadApps()
+                                    destination = AppDestination.APP_SELECTION
+                                },
                                 modifier = Modifier.padding(innerPadding),
                             )
                             AppDestination.APP_SELECTION -> AppSelectionScreen(
                                 viewModel = appSelectionViewModel,
-                                onBack = { destination = AppDestination.HOME },
+                                onBack = { destination = AppDestination.LIMITS },
+                                onSelectApp = { packageName ->
+                                    limitViewModel.beginAdd(packageName)
+                                    destination = AppDestination.LIMITS
+                                },
                                 modifier = Modifier.padding(innerPadding),
                             )
                         }

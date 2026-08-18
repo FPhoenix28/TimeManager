@@ -37,8 +37,7 @@ import android.graphics.Bitmap
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
-    onOpenLimits: () -> Unit,
-    onOpenAppSelection: () -> Unit,
+    onOpenManagement: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -47,8 +46,7 @@ fun HomeScreen(
         HomeUiState.Loading -> LoadingContent(modifier)
         is HomeUiState.Success -> UsageList(
             appUsages = state.appUsages,
-            onOpenLimits = onOpenLimits,
-            onOpenAppSelection = onOpenAppSelection,
+            onOpenManagement = onOpenManagement,
             modifier = modifier,
         )
         is HomeUiState.Error -> ErrorContent(
@@ -72,8 +70,7 @@ private fun LoadingContent(modifier: Modifier = Modifier) {
 @Composable
 private fun UsageList(
     appUsages: List<AppUsageWithLimit>,
-    onOpenLimits: () -> Unit,
-    onOpenAppSelection: () -> Unit,
+    onOpenManagement: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val usageSummary = remember(appUsages) {
@@ -111,19 +108,10 @@ private fun UsageList(
 
         item {
             Button(
-                onClick = onOpenAppSelection,
+                onClick = onOpenManagement,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("管理目标应用")
-            }
-        }
-
-        item {
-            Button(
-                onClick = onOpenLimits,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("设置每日额度")
+                Text("管理应用")
             }
         }
 
