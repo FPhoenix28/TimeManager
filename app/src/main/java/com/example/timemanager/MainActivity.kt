@@ -26,9 +26,11 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.core.content.ContextCompat
 import com.example.timemanager.data.preferences.AppLimitPreferences
 import com.example.timemanager.data.preferences.RealtimeUsagePreferences
+import com.example.timemanager.data.preferences.TrackedAppPreferences
 import com.example.timemanager.data.repository.InstalledAppInfoProvider
 import com.example.timemanager.data.repository.InstalledAppRepository
 import com.example.timemanager.data.repository.LimitRepository
+import com.example.timemanager.data.repository.TrackedAppRepository
 import com.example.timemanager.data.repository.UsageStatsReader
 import com.example.timemanager.data.repository.UsageRepository
 import com.example.timemanager.data.repository.UsageTimeRepository
@@ -37,6 +39,8 @@ import com.example.timemanager.ui.home.HomeScreen
 import com.example.timemanager.ui.home.HomeViewModel
 import com.example.timemanager.ui.limit.LimitScreen
 import com.example.timemanager.ui.limit.LimitViewModel
+import com.example.timemanager.ui.selection.AppSelectionScreen
+import com.example.timemanager.ui.selection.AppSelectionViewModel
 import com.example.timemanager.utils.UsagePermissionManager
 import com.example.timemanager.notifications.NotificationHelper
 import com.example.timemanager.service.UsageMonitorService
@@ -47,6 +51,7 @@ class MainActivity : ComponentActivity() {
     private var destination by mutableStateOf(AppDestination.HOME)
     private lateinit var homeViewModel: HomeViewModel
     private lateinit var limitViewModel: LimitViewModel
+    private lateinit var appSelectionViewModel: AppSelectionViewModel
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { isGranted ->
@@ -57,11 +62,17 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         NotificationHelper(applicationContext).createNotificationChannel()
-        UsageLimitWorkScheduler.schedule(applicationContext)
+        UsageLimitWorkScheduler.cancelLegacySchedule(applicationContext)
         requestNotificationPermissionIfNeeded()
         logUsageAccessStatus()
         val limitRepository = LimitRepository(
             AppLimitPreferences(applicationContext),
+        )
+        val installedAppRepository = InstalledAppRepository(
+            InstalledAppInfoProvider(packageManager),
+        )
+        val trackedAppRepository = TrackedAppRepository(
+            TrackedAppPreferences(applicationContext),
         )
         homeViewModel = ViewModelProvider(
             this,
@@ -76,12 +87,17 @@ class MainActivity : ComponentActivity() {
         limitViewModel = ViewModelProvider(
             this,
             LimitViewModel.Factory(
-                installedAppRepository = InstalledAppRepository(
-                    InstalledAppInfoProvider(packageManager),
-                ),
+                installedAppRepository = installedAppRepository,
                 limitRepository = limitRepository,
             ),
         )[LimitViewModel::class.java]
+        appSelectionViewModel = ViewModelProvider(
+            this,
+            AppSelectionViewModel.Factory(
+                installedAppRepository = installedAppRepository,
+                trackedAppRepository = trackedAppRepository,
+            ),
+        )[AppSelectionViewModel::class.java]
         setContent {
             TimeManagerTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
@@ -90,10 +106,18 @@ class MainActivity : ComponentActivity() {
                             AppDestination.HOME -> HomeScreen(
                                 viewModel = homeViewModel,
                                 onOpenLimits = { destination = AppDestination.LIMITS },
+                                onOpenAppSelection = {
+                                    destination = AppDestination.APP_SELECTION
+                                },
                                 modifier = Modifier.padding(innerPadding),
                             )
                             AppDestination.LIMITS -> LimitScreen(
                                 viewModel = limitViewModel,
+                                onBack = { destination = AppDestination.HOME },
+                                modifier = Modifier.padding(innerPadding),
+                            )
+                            AppDestination.APP_SELECTION -> AppSelectionScreen(
+                                viewModel = appSelectionViewModel,
                                 onBack = { destination = AppDestination.HOME },
                                 modifier = Modifier.padding(innerPadding),
                             )
@@ -156,6 +180,7 @@ class MainActivity : ComponentActivity() {
 private enum class AppDestination {
     HOME,
     LIMITS,
+    APP_SELECTION,
 }
 
 @Composable

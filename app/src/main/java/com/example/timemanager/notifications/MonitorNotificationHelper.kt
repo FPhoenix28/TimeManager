@@ -12,6 +12,7 @@ import androidx.core.app.NotificationCompat
 import com.example.timemanager.MainActivity
 import com.example.timemanager.R
 import com.example.timemanager.data.model.TimerState
+import com.example.timemanager.data.model.UsageLimitEvaluation
 
 /** Creates the notification required while foreground app monitoring is active. */
 class MonitorNotificationHelper(context: Context) {
@@ -35,6 +36,8 @@ class MonitorNotificationHelper(context: Context) {
     fun buildRunningNotification(
         timerState: TimerState? = null,
         todayUsageSeconds: Long? = null,
+        limitEvaluation: UsageLimitEvaluation? = null,
+        totalTrackedUsageSeconds: Long? = null,
     ): Notification {
         createNotificationChannel()
         val openAppIntent = PendingIntent.getActivity(
@@ -46,14 +49,39 @@ class MonitorNotificationHelper(context: Context) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-        val message = timerState?.let { state ->
+        val title: String
+        val message: String
+        if (timerState != null) {
+            title = timerState.appName
+            val state = timerState
             val displayedSeconds = todayUsageSeconds ?: state.currentSessionSeconds
-            "正在使用：${state.appName}\n今日：${formatDuration(displayedSeconds)}"
-        } ?: "TimeManager正在运行"
+            message = if (limitEvaluation == null) {
+                buildString {
+                    append("今日：${formatDuration(displayedSeconds)}")
+                    append("\n本次连续：${formatDuration(state.currentSessionSeconds)}")
+                }
+            } else {
+                buildString {
+                    append(
+                        "今日 ${formatDuration(limitEvaluation.usedSeconds)} / " +
+                            formatDuration(limitEvaluation.limitSeconds),
+                    )
+                    append("\n本次连续 ${formatDuration(state.currentSessionSeconds)}")
+                    append("\n剩余 ${formatDuration(limitEvaluation.remainingSeconds)}")
+                }
+            }
+        } else {
+            title = "TimeManager 正在监控"
+            message = if (totalTrackedUsageSeconds == null) {
+                "TimeManager正在运行"
+            } else {
+                "今日受管理应用使用：${formatReadableDuration(totalTrackedUsageSeconds)}"
+            }
+        }
 
         return NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("TimeManager")
+            .setContentTitle(title)
             .setContentText(message.replace('\n', ' '))
             .setStyle(NotificationCompat.BigTextStyle().bigText(message))
             .setContentIntent(openAppIntent)
@@ -67,14 +95,26 @@ class MonitorNotificationHelper(context: Context) {
     fun updateRunningNotification(
         timerState: TimerState,
         todayUsageSeconds: Long,
+        limitEvaluation: UsageLimitEvaluation? = null,
     ) {
         runCatching {
             context.getSystemService(NotificationManager::class.java).notify(
                 NOTIFICATION_ID,
-                buildRunningNotification(timerState, todayUsageSeconds),
+                buildRunningNotification(timerState, todayUsageSeconds, limitEvaluation),
             )
         }.onFailure { error ->
             Log.w(TAG, "Unable to update foreground service notification.", error)
+        }
+    }
+
+    fun updateWaitingNotification(totalTrackedUsageSeconds: Long) {
+        runCatching {
+            context.getSystemService(NotificationManager::class.java).notify(
+                NOTIFICATION_ID,
+                buildRunningNotification(totalTrackedUsageSeconds = totalTrackedUsageSeconds),
+            )
+        }.onFailure { error ->
+            Log.w(TAG, "Unable to update waiting notification.", error)
         }
     }
 
@@ -84,12 +124,19 @@ class MonitorNotificationHelper(context: Context) {
         return "%02d:%02d".format(minutes, seconds)
     }
 
+    private fun formatReadableDuration(totalSeconds: Long): String {
+        val hours = totalSeconds / SECONDS_PER_HOUR
+        val minutes = (totalSeconds % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE
+        return if (hours > 0L) "$hours 小时 $minutes 分钟" else "$minutes 分钟"
+    }
+
     companion object {
         const val NOTIFICATION_ID = 10_001
         private const val CHANNEL_ID = "usage_monitor_service"
         private const val CHANNEL_NAME = "实时使用监控"
         private const val CHANNEL_DESCRIPTION = "显示 TimeManager 实时监控的运行状态"
         private const val SECONDS_PER_MINUTE = 60L
+        private const val SECONDS_PER_HOUR = 3_600L
         private const val TAG = "MonitorNotification"
     }
 }

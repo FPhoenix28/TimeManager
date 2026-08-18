@@ -6,8 +6,10 @@ import com.example.timemanager.data.model.AppUsage
 class UsageRepository(
     private val usageStatsReader: UsageStatsReader,
 ) {
-    fun getTodayUsage(): List<AppUsage> = usageStatsReader
-        .getTodayUsage()
+    fun getUsageSince(startTimeMillis: Long): List<AppUsage> =
+        mergeByPackage(usageStatsReader.getUsageSince(startTimeMillis))
+
+    private fun mergeByPackage(usages: List<AppUsage>): List<AppUsage> = usages
         .fold(linkedMapOf<String, AppUsage>()) { usagesByPackage, appUsage ->
             val existingUsage = usagesByPackage[appUsage.packageName]
             usagesByPackage[appUsage.packageName] = if (existingUsage == null) {

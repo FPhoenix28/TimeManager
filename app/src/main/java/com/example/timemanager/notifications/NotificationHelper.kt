@@ -13,6 +13,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.example.timemanager.MainActivity
 import com.example.timemanager.R
+import com.example.timemanager.data.model.SessionReminder
 
 /** Creates the usage-alert channel and posts usage limit notifications. */
 class NotificationHelper(context: Context) {
@@ -35,10 +36,10 @@ class NotificationHelper(context: Context) {
     fun sendApproachingLimit(
         packageName: String,
         appName: String,
-        usedMinutes: Long,
+        remainingSeconds: Long,
     ): Boolean = sendNotification(
         notificationId = notificationId(packageName, APPROACHING_THRESHOLD),
-        message = "$appName 已使用 $usedMinutes 分钟，接近每日限制",
+        message = "$appName 今日额度已使用 80%，还剩 ${remainingMinutes(remainingSeconds)} 分钟",
     )
 
     fun sendLimitReached(
@@ -48,6 +49,26 @@ class NotificationHelper(context: Context) {
         notificationId = notificationId(packageName, REACHED_THRESHOLD),
         message = "$appName 今日额度已用完",
     )
+
+    fun sendSessionReminder(
+        packageName: String,
+        appName: String,
+        reminder: SessionReminder,
+    ): Boolean {
+        val message = when (reminder) {
+            SessionReminder.FIFTEEN_MINUTES ->
+                "你已经连续使用$appName 15 分钟"
+            SessionReminder.THIRTY_MINUTES ->
+                "你已经连续使用$appName 30 分钟，建议暂时离开一下"
+        }
+        return sendNotification(
+            notificationId = notificationId(
+                packageName,
+                SESSION_NOTIFICATION_OFFSET + reminder.thresholdMinutes,
+            ),
+            message = message,
+        )
+    }
 
     private fun sendNotification(notificationId: Int, message: String): Boolean {
         if (!canPostNotifications()) return false
@@ -85,11 +106,16 @@ class NotificationHelper(context: Context) {
     private fun notificationId(packageName: String, thresholdPercent: Int): Int =
         31 * packageName.hashCode() + thresholdPercent
 
+    private fun remainingMinutes(remainingSeconds: Long): Long =
+        (remainingSeconds.coerceAtLeast(0L) + SECONDS_PER_MINUTE - 1L) / SECONDS_PER_MINUTE
+
     private companion object {
         const val CHANNEL_ID = "usage_limit_alerts"
         const val CHANNEL_NAME = "使用额度提醒"
         const val CHANNEL_DESCRIPTION = "应用接近或达到每日使用额度时提醒"
         const val APPROACHING_THRESHOLD = 80
         const val REACHED_THRESHOLD = 100
+        const val SECONDS_PER_MINUTE = 60L
+        const val SESSION_NOTIFICATION_OFFSET = 1_000
     }
 }

@@ -4,13 +4,14 @@ import com.example.timemanager.data.model.AppUsage
 import com.example.timemanager.data.model.RealtimeUsageRecord
 import com.example.timemanager.data.model.TimerState
 import com.example.timemanager.data.preferences.RealtimeUsagePreferences
-import java.time.LocalDate
+import com.example.timemanager.utils.UsageDayProvider
 import kotlin.math.max
 
 /** Combines UsageStats history with a persisted real-time usage estimate. */
 class UsageTimeRepository(
     private val usageRepository: UsageRepository,
     private val preferences: RealtimeUsagePreferences,
+    private val usageDayProvider: UsageDayProvider = UsageDayProvider(),
 ) {
     private var runtimeDate: String? = null
     private var activePackageName: String? = null
@@ -19,17 +20,17 @@ class UsageTimeRepository(
     private val persistedSecondsByPackage = mutableMapOf<String, Long>()
 
     suspend fun recordTimerState(timerState: TimerState): Long {
-        val today = today()
-        ensureRuntimeDate(today)
+        val usageDay = usageDayProvider.currentUsageDay()
+        ensureRuntimeDate(usageDay.key)
 
         if (activePackageName != timerState.packageName) {
-            flushActiveRecord(today)
+            flushActiveRecord(usageDay.key)
             activePackageName = timerState.packageName
             lastSessionSeconds = timerState.currentSessionSeconds
 
             estimatesByPackage[timerState.packageName] = max(
                 estimatesByPackage[timerState.packageName] ?: 0L,
-                historicalUsageSeconds(timerState.packageName),
+                historicalUsageSeconds(timerState.packageName, usageDay.startTimeMillis),
             )
         } else {
             val elapsedDelta = (timerState.currentSessionSeconds - lastSessionSeconds)
@@ -42,7 +43,7 @@ class UsageTimeRepository(
         val estimate = estimatesByPackage[timerState.packageName] ?: 0L
         val lastPersisted = persistedSecondsByPackage[timerState.packageName] ?: 0L
         if (estimate - lastPersisted >= PERSIST_INTERVAL_SECONDS) {
-            persist(timerState.packageName, today, estimate)
+            persist(timerState.packageName, usageDay.key, estimate)
         }
         return estimate
     }
@@ -50,14 +51,19 @@ class UsageTimeRepository(
     /** Returns today's unified usage for one package in seconds. */
     suspend fun getTodayUsage(packageName: String): Long {
         require(packageName.isNotBlank()) { "packageName must not be blank." }
-        val realtimeSeconds = preferences.getRecordsForDate(today())[packageName] ?: 0L
-        return max(historicalUsageSeconds(packageName), realtimeSeconds)
+        val usageDay = usageDayProvider.currentUsageDay()
+        val realtimeSeconds = preferences.getRecordsForDate(usageDay.key)[packageName] ?: 0L
+        return max(
+            historicalUsageSeconds(packageName, usageDay.startTimeMillis),
+            realtimeSeconds,
+        )
     }
 
     /** Returns the home-screen list with unified usage values. */
     suspend fun getTodayUsage(): List<AppUsage> {
-        val realtimeSeconds = preferences.getRecordsForDate(today())
-        return usageRepository.getTodayUsage()
+        val usageDay = usageDayProvider.currentUsageDay()
+        val realtimeSeconds = preferences.getRecordsForDate(usageDay.key)
+        return usageRepository.getUsageSince(usageDay.startTimeMillis)
             .map { usage ->
                 usage.copy(
                     usageTimeMillis = max(
@@ -67,6 +73,23 @@ class UsageTimeRepository(
                 )
             }
             .sortedByDescending(AppUsage::usageTimeMillis)
+    }
+
+    suspend fun getTotalTodayUsageSeconds(packageNames: Set<String>): Long {
+        if (packageNames.isEmpty()) return 0L
+
+        val usageDay = usageDayProvider.currentUsageDay()
+        val realtimeSeconds = preferences.getRecordsForDate(usageDay.key)
+        val historicalMillis = usageRepository
+            .getUsageSince(usageDay.startTimeMillis)
+            .associate { usage -> usage.packageName to usage.usageTimeMillis }
+
+        return packageNames.sumOf { packageName ->
+            max(
+                historicalMillis[packageName] ?: 0L,
+                (realtimeSeconds[packageName] ?: 0L) * MILLIS_PER_SECOND,
+            ) / MILLIS_PER_SECOND
+        }
     }
 
     suspend fun flush() {
@@ -106,14 +129,15 @@ class UsageTimeRepository(
         persistedSecondsByPackage[packageName] = seconds
     }
 
-    private fun historicalUsageSeconds(packageName: String): Long = usageRepository
-        .getTodayUsage()
+    private fun historicalUsageSeconds(
+        packageName: String,
+        startTimeMillis: Long,
+    ): Long = usageRepository
+        .getUsageSince(startTimeMillis)
         .firstOrNull { usage -> usage.packageName == packageName }
         ?.usageTimeMillis
         ?.div(MILLIS_PER_SECOND)
         ?: 0L
-
-    private fun today(): String = LocalDate.now().toString()
 
     private companion object {
         const val MILLIS_PER_SECOND = 1_000L

@@ -38,6 +38,7 @@ import android.graphics.Bitmap
 fun HomeScreen(
     viewModel: HomeViewModel,
     onOpenLimits: () -> Unit,
+    onOpenAppSelection: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -47,6 +48,7 @@ fun HomeScreen(
         is HomeUiState.Success -> UsageList(
             appUsages = state.appUsages,
             onOpenLimits = onOpenLimits,
+            onOpenAppSelection = onOpenAppSelection,
             modifier = modifier,
         )
         is HomeUiState.Error -> ErrorContent(
@@ -71,6 +73,7 @@ private fun LoadingContent(modifier: Modifier = Modifier) {
 private fun UsageList(
     appUsages: List<AppUsageWithLimit>,
     onOpenLimits: () -> Unit,
+    onOpenAppSelection: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val usageSummary = remember(appUsages) {
@@ -104,6 +107,15 @@ private fun UsageList(
                 totalUsageMinutes = usageSummary.totalUsageMinutes,
                 mostUsedApp = usageSummary.mostUsedApp,
             )
+        }
+
+        item {
+            Button(
+                onClick = onOpenAppSelection,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("管理目标应用")
+            }
         }
 
         item {
