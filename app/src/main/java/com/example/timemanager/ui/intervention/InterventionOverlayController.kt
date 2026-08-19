@@ -1,0 +1,127 @@
+package com.example.timemanager.ui.intervention
+
+import android.content.Context
+import android.content.Intent
+import android.graphics.PixelFormat
+import android.view.Gravity
+import android.view.WindowManager
+import android.util.Log
+import androidx.compose.ui.platform.ComposeView
+import com.example.timemanager.data.model.LimitInterventionRequest
+import com.example.timemanager.ui.theme.TimeManagerTheme
+import com.example.timemanager.utils.OverlayPermissionManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+/** Displays one full-screen Compose overlay above the currently used app. */
+class InterventionOverlayController(context: Context) {
+    private val context = context.applicationContext
+    private val windowManager = context.getSystemService(WindowManager::class.java)
+    private var overlayView: ComposeView? = null
+    private var hostOwner: OverlayComposeHostOwner? = null
+    private var isOverlayShowing = false
+
+    suspend fun show(
+        request: LimitInterventionRequest,
+        onExit: () -> Unit,
+        onContinue: () -> Unit,
+    ): Boolean = withContext(Dispatchers.Main.immediate) {
+        Log.d(TAG, "show requested packageName=${request.packageName}")
+        if (isOverlayShowing) {
+            Log.d(TAG, "overlay already showing; addView skipped")
+            return@withContext true
+        }
+        val permissionGranted = OverlayPermissionManager.canDrawOverlays(context)
+        Log.d(TAG, "permission granted=$permissionGranted")
+        if (!permissionGranted) return@withContext false
+
+        var ownerToCleanUp: OverlayComposeHostOwner? = null
+        var viewToCleanUp: ComposeView? = null
+        try {
+            val owner = OverlayComposeHostOwner().also { it.resume() }
+            ownerToCleanUp = owner
+            Log.d(TAG, "host created")
+            val view = ComposeView(context).apply {
+                owner.installViewTreeOwners(this)
+                Log.d(TAG, "view tree owners installed")
+                setContent {
+                    TimeManagerTheme {
+                        LimitReachedScreen(
+                            request = request,
+                            onExit = onExit,
+                            onContinue = onContinue,
+                        )
+                    }
+                }
+            }
+            viewToCleanUp = view
+            val params = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                PixelFormat.TRANSLUCENT,
+            ).apply {
+                gravity = Gravity.CENTER
+            }
+
+            Log.d(TAG, "addView requested")
+            windowManager.addView(view, params)
+            hostOwner = owner
+            overlayView = view
+            isOverlayShowing = true
+            Log.d(TAG, "overlay attached")
+            true
+        } catch (error: Exception) {
+            Log.e(TAG, "error while showing overlay", error)
+            viewToCleanUp?.let { view ->
+                if (view.isAttachedToWindow) {
+                    try {
+                        windowManager.removeViewImmediate(view)
+                    } catch (removeError: IllegalArgumentException) {
+                        Log.w(TAG, "failed overlay was already detached", removeError)
+                    }
+                }
+                view.disposeComposition()
+            }
+            ownerToCleanUp?.destroy()
+            false
+        }
+    }
+
+    suspend fun dismiss() = withContext(Dispatchers.Main.immediate) {
+        dismissOnMain()
+    }
+
+    fun openHomeScreen() {
+        context.startActivity(
+            Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            },
+        )
+    }
+
+    private fun dismissOnMain() {
+        if (!isOverlayShowing && overlayView == null && hostOwner == null) return
+        Log.d(TAG, "overlay dismissed")
+        isOverlayShowing = false
+        hostOwner?.destroy()
+        overlayView?.let { view ->
+            try {
+                windowManager.removeViewImmediate(view)
+            } catch (error: IllegalArgumentException) {
+                Log.w(TAG, "overlay view was already detached", error)
+            }
+            view.disposeComposition()
+        }
+        overlayView = null
+        hostOwner = null
+        Log.d(TAG, "overlay disposed")
+    }
+
+    private companion object {
+        const val TAG = "OverlayIntervention"
+    }
+}

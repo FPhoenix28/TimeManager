@@ -18,6 +18,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.Composable
@@ -37,6 +38,8 @@ import android.graphics.Bitmap
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
+    hasOverlayPermission: Boolean,
+    onRequestOverlayPermission: () -> Unit,
     onOpenManagement: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -46,6 +49,8 @@ fun HomeScreen(
         HomeUiState.Loading -> LoadingContent(modifier)
         is HomeUiState.Success -> UsageList(
             appUsages = state.appUsages,
+            hasOverlayPermission = hasOverlayPermission,
+            onRequestOverlayPermission = onRequestOverlayPermission,
             onOpenManagement = onOpenManagement,
             modifier = modifier,
         )
@@ -70,6 +75,8 @@ private fun LoadingContent(modifier: Modifier = Modifier) {
 @Composable
 private fun UsageList(
     appUsages: List<AppUsageWithLimit>,
+    hasOverlayPermission: Boolean,
+    onRequestOverlayPermission: () -> Unit,
     onOpenManagement: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -112,6 +119,38 @@ private fun UsageList(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text("管理应用")
+            }
+        }
+
+        if (!hasOverlayPermission) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    ),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            text = "冷静页权限尚未开启",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Text(
+                            text = "开启后，受管理应用超出每日额度时会显示冷静页。",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        OutlinedButton(
+                            onClick = onRequestOverlayPermission,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("开启冷静页权限")
+                        }
+                    }
+                }
             }
         }
 

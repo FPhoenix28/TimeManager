@@ -96,26 +96,28 @@ class MonitorNotificationHelper(context: Context) {
         timerState: TimerState,
         todayUsageSeconds: Long,
         limitEvaluation: UsageLimitEvaluation? = null,
-    ) {
-        runCatching {
+    ): Boolean {
+        return runCatching {
             context.getSystemService(NotificationManager::class.java).notify(
-                NOTIFICATION_ID,
+                NotificationIds.FOREGROUND_SERVICE,
                 buildRunningNotification(timerState, todayUsageSeconds, limitEvaluation),
             )
+            Log.d(TAG, "foreground notification active state=running")
         }.onFailure { error ->
             Log.w(TAG, "Unable to update foreground service notification.", error)
-        }
+        }.isSuccess
     }
 
-    fun updateWaitingNotification(totalTrackedUsageSeconds: Long) {
-        runCatching {
+    fun updateWaitingNotification(totalTrackedUsageSeconds: Long): Boolean {
+        return runCatching {
             context.getSystemService(NotificationManager::class.java).notify(
-                NOTIFICATION_ID,
+                NotificationIds.FOREGROUND_SERVICE,
                 buildRunningNotification(totalTrackedUsageSeconds = totalTrackedUsageSeconds),
             )
+            Log.d(TAG, "foreground notification active state=waiting")
         }.onFailure { error ->
             Log.w(TAG, "Unable to update waiting notification.", error)
-        }
+        }.isSuccess
     }
 
     private fun formatDuration(totalSeconds: Long): String {
@@ -131,12 +133,11 @@ class MonitorNotificationHelper(context: Context) {
     }
 
     companion object {
-        const val NOTIFICATION_ID = 10_001
         private const val CHANNEL_ID = "usage_monitor_service"
         private const val CHANNEL_NAME = "实时使用监控"
         private const val CHANNEL_DESCRIPTION = "显示 TimeManager 实时监控的运行状态"
         private const val SECONDS_PER_MINUTE = 60L
         private const val SECONDS_PER_HOUR = 3_600L
-        private const val TAG = "MonitorNotification"
+        private const val TAG = "ForegroundNotification"
     }
 }

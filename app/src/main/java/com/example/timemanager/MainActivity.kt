@@ -42,12 +42,14 @@ import com.example.timemanager.ui.limit.LimitViewModel
 import com.example.timemanager.ui.selection.AppSelectionScreen
 import com.example.timemanager.ui.selection.AppSelectionViewModel
 import com.example.timemanager.utils.UsagePermissionManager
+import com.example.timemanager.utils.OverlayPermissionManager
 import com.example.timemanager.notifications.NotificationHelper
 import com.example.timemanager.service.UsageMonitorService
 import com.example.timemanager.worker.UsageLimitWorkScheduler
 
 class MainActivity : ComponentActivity() {
     private var hasUsageAccess by mutableStateOf(false)
+    private var hasOverlayPermission by mutableStateOf(false)
     private var destination by mutableStateOf(AppDestination.HOME)
     private lateinit var homeViewModel: HomeViewModel
     private lateinit var limitViewModel: LimitViewModel
@@ -108,6 +110,8 @@ class MainActivity : ComponentActivity() {
                         when (destination) {
                             AppDestination.HOME -> HomeScreen(
                                 viewModel = homeViewModel,
+                                hasOverlayPermission = hasOverlayPermission,
+                                onRequestOverlayPermission = ::openOverlaySettings,
                                 onOpenManagement = {
                                     limitViewModel.loadApps()
                                     destination = AppDestination.LIMITS
@@ -148,6 +152,8 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         logUsageAccessStatus()
+        hasOverlayPermission = OverlayPermissionManager.canDrawOverlays(this)
+        Log.d(TAG, "hasOverlayPermission=$hasOverlayPermission")
         if (hasUsageAccess) {
             startUsageMonitorService()
             homeViewModel.loadTodayUsage()
@@ -156,6 +162,10 @@ class MainActivity : ComponentActivity() {
 
     private fun openUsageAccessSettings() {
         startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+    }
+
+    private fun openOverlaySettings() {
+        startActivity(OverlayPermissionManager.settingsIntent(this))
     }
 
     private fun requestNotificationPermissionIfNeeded() {

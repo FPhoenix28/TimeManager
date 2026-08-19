@@ -9,24 +9,31 @@ import android.os.PowerManager
 import android.util.Log
 import com.example.timemanager.data.model.ForegroundApp
 import com.example.timemanager.data.preferences.AppLimitPreferences
+import com.example.timemanager.data.preferences.InterventionPreferences
 import com.example.timemanager.data.preferences.NotificationStatePreferences
 import com.example.timemanager.data.preferences.RealtimeUsagePreferences
 import com.example.timemanager.data.preferences.TrackedAppPreferences
 import com.example.timemanager.data.repository.LimitRepository
+import com.example.timemanager.data.repository.InterventionRepository
 import com.example.timemanager.data.repository.NotificationStateRepository
 import com.example.timemanager.data.repository.TrackedAppRepository
 import com.example.timemanager.data.repository.UsageRepository
 import com.example.timemanager.data.repository.UsageStatsReader
 import com.example.timemanager.data.repository.UsageTimeRepository
 import com.example.timemanager.domain.limit.UsageLimitEvaluator
+import com.example.timemanager.domain.limit.LimitInterventionManager
+import com.example.timemanager.data.model.LimitInterventionDecision
 import com.example.timemanager.monitor.ForegroundAppDetector
 import com.example.timemanager.monitor.SessionTracker
 import com.example.timemanager.notifications.MonitorNotificationHelper
 import com.example.timemanager.notifications.NotificationHelper
+import com.example.timemanager.notifications.NotificationIds
 import com.example.timemanager.notifications.UsageLimitNotifier
 import com.example.timemanager.timer.AppTimer
+import com.example.timemanager.ui.intervention.InterventionOverlayController
 import com.example.timemanager.utils.UsageDayProvider
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -49,6 +56,8 @@ class UsageMonitorService : Service() {
     private lateinit var limitRepository: LimitRepository
     private lateinit var limitEvaluator: UsageLimitEvaluator
     private lateinit var usageLimitNotifier: UsageLimitNotifier
+    private lateinit var interventionManager: LimitInterventionManager
+    private lateinit var interventionOverlayController: InterventionOverlayController
     private lateinit var usageDayProvider: UsageDayProvider
     private lateinit var sessionTracker: SessionTracker
     private lateinit var alertNotificationHelper: NotificationHelper
@@ -94,6 +103,13 @@ class UsageMonitorService : Service() {
             notificationHelper = alertNotificationHelper,
             usageDayProvider = usageDayProvider,
         )
+        interventionManager = LimitInterventionManager(
+            repository = InterventionRepository(
+                InterventionPreferences(applicationContext),
+            ),
+            usageDayProvider = usageDayProvider,
+        )
+        interventionOverlayController = InterventionOverlayController(applicationContext)
         observeTrackedApps()
         observeLimits()
         startDetection()
@@ -114,6 +130,9 @@ class UsageMonitorService : Service() {
         runBlocking(Dispatchers.IO) {
             finalTimerState?.let { usageTimeRepository.recordTimerState(it) }
             usageTimeRepository.flush()
+        }
+        runBlocking {
+            interventionOverlayController.dismiss()
         }
         serviceScope.cancel()
         Log.d(TAG, "Usage monitor service stopped.")
@@ -179,6 +198,13 @@ class UsageMonitorService : Service() {
             return
         }
 
+        val previousTimedApp = timedForegroundApp
+        val isNewSession = previousTimedApp?.packageName != foregroundApp.packageName
+        if (previousTimedApp != null && isNewSession) {
+            if (interventionManager.onAppLeft(previousTimedApp.packageName)) {
+                interventionOverlayController.dismiss()
+            }
+        }
         val timerState = appTimer.update(foregroundApp)
         sessionTracker.update(timerState)?.let { reminder ->
             alertNotificationHelper.sendSessionReminder(
@@ -200,12 +226,42 @@ class UsageMonitorService : Service() {
         }
         if (limitEvaluation != null) {
             usageLimitNotifier.notifyIfNeeded(foregroundApp.appName, limitEvaluation)
+        } else if (interventionManager.onAppLeft(foregroundApp.packageName)) {
+            interventionOverlayController.dismiss()
         }
-        notificationHelper.updateRunningNotification(
+        val foregroundNotificationUpdated = notificationHelper.updateRunningNotification(
             timerState = timerState,
             todayUsageSeconds = todayUsageSeconds,
             limitEvaluation = limitEvaluation,
         )
+        if (limitEvaluation != null) {
+            Log.d(
+                TAG,
+                "packageName=${foregroundApp.packageName} managed=true " +
+                    "todayUsageSeconds=$todayUsageSeconds " +
+                    "dailyLimitSeconds=${limitEvaluation.limitSeconds} " +
+                    "isOverLimit=${limitEvaluation.isLimitReached} " +
+                    "foregroundServiceRunning=true " +
+                    "foregroundNotificationUpdated=$foregroundNotificationUpdated",
+            )
+            val decision = interventionManager.evaluate(
+                appName = foregroundApp.appName,
+                evaluation = limitEvaluation,
+                currentSessionSeconds = timerState.currentSessionSeconds,
+                isNewSession = isNewSession,
+            )
+            try {
+                handleInterventionDecision(decision)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                val failedPackageName = (decision as? LimitInterventionDecision.Show)
+                    ?.request
+                    ?.packageName
+                failedPackageName?.let(interventionManager::onDisplayFailed)
+                Log.e(TAG, "intervention failed but monitoring continues", error)
+            }
+        }
     }
 
     private fun observeLimits() {
@@ -223,6 +279,9 @@ class UsageMonitorService : Service() {
     private suspend fun finishTrackedSession() {
         val finalTimerState = appTimer.finishCurrentSession()
         if (finalTimerState != null) {
+            if (interventionManager.onAppLeft(finalTimerState.packageName)) {
+                interventionOverlayController.dismiss()
+            }
             usageTimeRepository.recordTimerState(finalTimerState)
             usageTimeRepository.flush()
             Log.d(TAG, "Stopped timing untracked app transition: ${finalTimerState.appName}")
@@ -230,6 +289,41 @@ class UsageMonitorService : Service() {
         timedForegroundApp = null
         sessionTracker.endSession()
         updateIdleNotificationIfNeeded(force = true)
+    }
+
+    private suspend fun handleInterventionDecision(decision: LimitInterventionDecision) {
+        when (decision) {
+            LimitInterventionDecision.None -> Unit
+            LimitInterventionDecision.Hide -> interventionOverlayController.dismiss()
+            is LimitInterventionDecision.Show -> {
+                val request = decision.request
+                val wasShown = interventionOverlayController.show(
+                    request = request,
+                    onExit = {
+                        serviceScope.launch {
+                            timingMutex.withLock {
+                                interventionManager.closeVisibleIntervention(request.packageName)
+                                interventionOverlayController.dismiss()
+                                interventionOverlayController.openHomeScreen()
+                            }
+                        }
+                    },
+                    onContinue = {
+                        serviceScope.launch {
+                            timingMutex.withLock {
+                                if (interventionManager.grantFiveMinuteGrace(request.packageName)) {
+                                    interventionOverlayController.dismiss()
+                                }
+                            }
+                        }
+                    },
+                )
+                if (!wasShown) {
+                    interventionManager.onDisplayFailed(request.packageName)
+                    Log.w(TAG, "intervention failed but monitoring continues")
+                }
+            }
+        }
     }
 
     private suspend fun updateIdleNotificationIfNeeded(force: Boolean = false) {
@@ -267,13 +361,14 @@ class UsageMonitorService : Service() {
         val notification = notificationHelper.buildRunningNotification()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(
-                MonitorNotificationHelper.NOTIFICATION_ID,
+                NotificationIds.FOREGROUND_SERVICE,
                 notification,
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
             )
         } else {
-            startForeground(MonitorNotificationHelper.NOTIFICATION_ID, notification)
+            startForeground(NotificationIds.FOREGROUND_SERVICE, notification)
         }
+        Log.d(FOREGROUND_NOTIFICATION_TAG, "foreground notification active serviceStarted=true")
     }
 
     private companion object {
@@ -281,5 +376,6 @@ class UsageMonitorService : Service() {
         const val DETECTION_INTERVAL_MILLIS = 1_000L
         const val EVENT_OVERLAP_MILLIS = 500L
         const val INITIAL_LOOKBACK_MILLIS = 24 * 60 * 60 * 1_000L
+        const val FOREGROUND_NOTIFICATION_TAG = "ForegroundNotification"
     }
 }

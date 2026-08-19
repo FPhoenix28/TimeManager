@@ -38,7 +38,7 @@ class NotificationHelper(context: Context) {
         appName: String,
         remainingSeconds: Long,
     ): Boolean = sendNotification(
-        notificationId = notificationId(packageName, APPROACHING_THRESHOLD),
+        notificationId = NotificationIds.limitWarning(packageName),
         message = "$appName 今日额度已使用 80%，还剩 ${remainingMinutes(remainingSeconds)} 分钟",
     )
 
@@ -46,7 +46,7 @@ class NotificationHelper(context: Context) {
         packageName: String,
         appName: String,
     ): Boolean = sendNotification(
-        notificationId = notificationId(packageName, REACHED_THRESHOLD),
+        notificationId = NotificationIds.limitReached(packageName),
         message = "$appName 今日额度已用完",
     )
 
@@ -62,10 +62,7 @@ class NotificationHelper(context: Context) {
                 "你已经连续使用$appName 30 分钟，建议暂时离开一下"
         }
         return sendNotification(
-            notificationId = notificationId(
-                packageName,
-                SESSION_NOTIFICATION_OFFSET + reminder.thresholdMinutes,
-            ),
+            notificationId = NotificationIds.sessionReminder(packageName, reminder),
             message = message,
         )
     }
@@ -103,9 +100,6 @@ class NotificationHelper(context: Context) {
                 Manifest.permission.POST_NOTIFICATIONS,
             ) == PackageManager.PERMISSION_GRANTED
 
-    private fun notificationId(packageName: String, thresholdPercent: Int): Int =
-        31 * packageName.hashCode() + thresholdPercent
-
     private fun remainingMinutes(remainingSeconds: Long): Long =
         (remainingSeconds.coerceAtLeast(0L) + SECONDS_PER_MINUTE - 1L) / SECONDS_PER_MINUTE
 
@@ -113,9 +107,6 @@ class NotificationHelper(context: Context) {
         const val CHANNEL_ID = "usage_limit_alerts"
         const val CHANNEL_NAME = "使用额度提醒"
         const val CHANNEL_DESCRIPTION = "应用接近或达到每日使用额度时提醒"
-        const val APPROACHING_THRESHOLD = 80
-        const val REACHED_THRESHOLD = 100
         const val SECONDS_PER_MINUTE = 60L
-        const val SESSION_NOTIFICATION_OFFSET = 1_000
     }
 }
