@@ -9,15 +9,15 @@ class InterventionRepository(
     suspend fun getState(packageName: String, usageDayKey: String): InterventionState =
         preferences.getState(packageName, usageDayKey)
 
-    suspend fun grantGracePeriod(
+    suspend fun grantExtension(
         packageName: String,
         usageDayKey: String,
-        gracePeriodEndTime: Long,
+        extensionMinutes: Int,
         maxExtensions: Int,
-    ): InterventionState? = preferences.grantGracePeriod(
+    ): InterventionState? = preferences.grantExtension(
         packageName,
         usageDayKey,
-        gracePeriodEndTime,
+        extensionMinutes,
         maxExtensions,
     )
 

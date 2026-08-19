@@ -5,7 +5,9 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.timemanager.data.model.AppLimit
 import com.example.timemanager.data.repository.LimitRepository
+import com.example.timemanager.data.repository.InterventionRepository
 import com.example.timemanager.data.repository.UsageTimeRepository
+import com.example.timemanager.utils.UsageDayProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,6 +21,8 @@ import kotlinx.coroutines.withContext
 class HomeViewModel(
     private val usageTimeRepository: UsageTimeRepository,
     private val limitRepository: LimitRepository,
+    private val interventionRepository: InterventionRepository,
+    private val usageDayProvider: UsageDayProvider = UsageDayProvider(),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<HomeUiState>(HomeUiState.Loading)
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -47,13 +51,25 @@ class HomeViewModel(
                 }
                 .collect { appLimits ->
                     val limitsByPackage = appLimits.associateBy(AppLimit::packageName)
+                    val usageDayKey = usageDayProvider.currentUsageDay().key
                     val usageWithLimits = appUsages.map { appUsage ->
+                        val baseLimit = limitsByPackage[appUsage.packageName]?.limitMinutes
+                        val extensionMinutes = if (baseLimit == null) {
+                            0
+                        } else {
+                            interventionRepository.getState(
+                                appUsage.packageName,
+                                usageDayKey,
+                            ).todayExtensionMinutes
+                        }
                         AppUsageWithLimit(
                             packageName = appUsage.packageName,
                             appName = appUsage.appName,
                             appIcon = appUsage.appIcon,
                             usedMinutes = appUsage.usageTimeMillis / MILLIS_PER_MINUTE,
-                            limitMinutes = limitsByPackage[appUsage.packageName]?.limitMinutes,
+                            baseLimitMinutes = baseLimit,
+                            extensionMinutes = extensionMinutes,
+                            effectiveLimitMinutes = baseLimit?.plus(extensionMinutes),
                         )
                     }.sortedByDescending(AppUsageWithLimit::usedMinutes)
 
@@ -65,11 +81,16 @@ class HomeViewModel(
     class Factory(
         private val usageTimeRepository: UsageTimeRepository,
         private val limitRepository: LimitRepository,
+        private val interventionRepository: InterventionRepository,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             if (modelClass.isAssignableFrom(HomeViewModel::class.java)) {
-                return HomeViewModel(usageTimeRepository, limitRepository) as T
+                return HomeViewModel(
+                    usageTimeRepository,
+                    limitRepository,
+                    interventionRepository,
+                ) as T
             }
             throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
         }

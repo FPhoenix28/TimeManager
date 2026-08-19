@@ -26,10 +26,12 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.core.content.ContextCompat
 import com.example.timemanager.data.preferences.AppLimitPreferences
 import com.example.timemanager.data.preferences.RealtimeUsagePreferences
+import com.example.timemanager.data.preferences.InterventionPreferences
 import com.example.timemanager.data.preferences.TrackedAppPreferences
 import com.example.timemanager.data.repository.InstalledAppInfoProvider
 import com.example.timemanager.data.repository.InstalledAppRepository
 import com.example.timemanager.data.repository.LimitRepository
+import com.example.timemanager.data.repository.InterventionRepository
 import com.example.timemanager.data.repository.TrackedAppRepository
 import com.example.timemanager.data.repository.UsageStatsReader
 import com.example.timemanager.data.repository.UsageRepository
@@ -70,6 +72,9 @@ class MainActivity : ComponentActivity() {
         val limitRepository = LimitRepository(
             AppLimitPreferences(applicationContext),
         )
+        val interventionRepository = InterventionRepository(
+            InterventionPreferences(applicationContext),
+        )
         val installedAppRepository = InstalledAppRepository(
             InstalledAppInfoProvider(packageManager),
         )
@@ -85,6 +90,7 @@ class MainActivity : ComponentActivity() {
             HomeViewModel.Factory(
                 usageTimeRepository = usageTimeRepository,
                 limitRepository = limitRepository,
+                interventionRepository = interventionRepository,
             ),
         )[HomeViewModel::class.java]
         limitViewModel = ViewModelProvider(

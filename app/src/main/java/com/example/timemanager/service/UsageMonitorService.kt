@@ -205,6 +205,9 @@ class UsageMonitorService : Service() {
                 interventionOverlayController.dismiss()
             }
         }
+        if (isNewSession) {
+            interventionManager.onManagedAppEntered(foregroundApp.packageName)
+        }
         val timerState = appTimer.update(foregroundApp)
         sessionTracker.update(timerState)?.let { reminder ->
             alertNotificationHelper.sendSessionReminder(
@@ -217,11 +220,18 @@ class UsageMonitorService : Service() {
         lastIdleUsageDayKey = null
         lastIdleTrackedPackages = emptySet()
         val todayUsageSeconds = usageTimeRepository.recordTimerState(timerState)
-        val limitEvaluation = limitMinutesByPackage[foregroundApp.packageName]?.let { limitMinutes ->
+        val baseLimitMinutes = limitMinutesByPackage[foregroundApp.packageName]
+        val effectiveLimit = baseLimitMinutes?.let { baseLimit ->
+            interventionManager.getEffectiveLimit(
+                packageName = foregroundApp.packageName,
+                baseDailyLimitMinutes = baseLimit,
+            )
+        }
+        val limitEvaluation = effectiveLimit?.let { limit ->
             limitEvaluator.evaluate(
                 packageName = foregroundApp.packageName,
                 todayUsageSeconds = todayUsageSeconds,
-                limitMinutes = limitMinutes,
+                limitMinutes = limit.effectiveLimitMinutes,
             )
         }
         if (limitEvaluation != null) {
@@ -239,7 +249,9 @@ class UsageMonitorService : Service() {
                 TAG,
                 "packageName=${foregroundApp.packageName} managed=true " +
                     "todayUsageSeconds=$todayUsageSeconds " +
-                    "dailyLimitSeconds=${limitEvaluation.limitSeconds} " +
+                    "baseLimitMinutes=${effectiveLimit?.baseDailyLimitMinutes} " +
+                    "todayExtensionMinutes=${effectiveLimit?.todayExtensionMinutes} " +
+                    "effectiveLimitSeconds=${limitEvaluation.limitSeconds} " +
                     "isOverLimit=${limitEvaluation.isLimitReached} " +
                     "foregroundServiceRunning=true " +
                     "foregroundNotificationUpdated=$foregroundNotificationUpdated",
@@ -247,6 +259,7 @@ class UsageMonitorService : Service() {
             val decision = interventionManager.evaluate(
                 appName = foregroundApp.appName,
                 evaluation = limitEvaluation,
+                baseDailyLimitMinutes = checkNotNull(baseLimitMinutes),
                 currentSessionSeconds = timerState.currentSessionSeconds,
                 isNewSession = isNewSession,
             )
@@ -311,8 +324,13 @@ class UsageMonitorService : Service() {
                     onContinue = {
                         serviceScope.launch {
                             timingMutex.withLock {
-                                if (interventionManager.grantFiveMinuteGrace(request.packageName)) {
+                                if (
+                                    interventionManager.grantFiveMinuteExtension(
+                                        request.packageName,
+                                    )
+                                ) {
                                     interventionOverlayController.dismiss()
+                                    reevaluateAfterExtension(request.packageName)
                                 }
                             }
                         }
@@ -324,6 +342,45 @@ class UsageMonitorService : Service() {
                 }
             }
         }
+    }
+
+    private suspend fun reevaluateAfterExtension(packageName: String) {
+        val foregroundApp = timedForegroundApp
+            ?.takeIf { it.packageName == packageName }
+            ?: return
+        val baseLimitMinutes = limitMinutesByPackage[packageName] ?: return
+        val timerState = appTimer.update(foregroundApp)
+        val todayUsageSeconds = usageTimeRepository.recordTimerState(timerState)
+        val effectiveLimit = interventionManager.getEffectiveLimit(
+            packageName = packageName,
+            baseDailyLimitMinutes = baseLimitMinutes,
+        )
+        val evaluation = limitEvaluator.evaluate(
+            packageName = packageName,
+            todayUsageSeconds = todayUsageSeconds,
+            limitMinutes = effectiveLimit.effectiveLimitMinutes,
+        )
+        notificationHelper.updateRunningNotification(
+            timerState = timerState,
+            todayUsageSeconds = todayUsageSeconds,
+            limitEvaluation = evaluation,
+        )
+        Log.d(
+            TAG,
+            "limit extension reevaluated packageName=$packageName " +
+                "todayUsageSeconds=$todayUsageSeconds " +
+                "effectiveLimitSeconds=${evaluation.limitSeconds} " +
+                "isOverLimit=${evaluation.isLimitReached}",
+        )
+        handleInterventionDecision(
+            interventionManager.evaluate(
+                appName = foregroundApp.appName,
+                evaluation = evaluation,
+                baseDailyLimitMinutes = baseLimitMinutes,
+                currentSessionSeconds = timerState.currentSessionSeconds,
+                isNewSession = false,
+            ),
+        )
     }
 
     private suspend fun updateIdleNotificationIfNeeded(force: Boolean = false) {

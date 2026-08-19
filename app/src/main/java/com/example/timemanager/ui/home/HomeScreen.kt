@@ -243,8 +243,8 @@ private fun UsageCard(appUsage: AppUsageWithLimit) {
 
 @Composable
 private fun UsageLimitContent(appUsage: AppUsageWithLimit) {
-    val limitMinutes = appUsage.limitMinutes
-    if (limitMinutes == null) {
+    val effectiveLimitMinutes = appUsage.effectiveLimitMinutes
+    if (effectiveLimitMinutes == null) {
         Text(
             text = "今日使用：${appUsage.usedMinutes} 分钟",
             style = MaterialTheme.typography.bodyMedium,
@@ -253,22 +253,30 @@ private fun UsageLimitContent(appUsage: AppUsageWithLimit) {
         return
     }
 
-    val remainingMinutes = (limitMinutes.toLong() - appUsage.usedMinutes).coerceAtLeast(0L)
+    val remainingMinutes = (effectiveLimitMinutes.toLong() - appUsage.usedMinutes)
+        .coerceAtLeast(0L)
     val usageProgress = when {
-        limitMinutes <= 0 && appUsage.usedMinutes > 0 -> 1f
-        limitMinutes <= 0 -> 0f
-        else -> (appUsage.usedMinutes.toFloat() / limitMinutes).coerceIn(0f, 1f)
+        effectiveLimitMinutes <= 0 && appUsage.usedMinutes > 0 -> 1f
+        effectiveLimitMinutes <= 0 -> 0f
+        else -> (appUsage.usedMinutes.toFloat() / effectiveLimitMinutes).coerceIn(0f, 1f)
     }
 
     Text(
-        text = "${appUsage.usedMinutes} / $limitMinutes 分钟",
+        text = "${appUsage.usedMinutes} / $effectiveLimitMinutes 分钟",
         style = MaterialTheme.typography.bodyMedium,
     )
     Text(
-        text = "每日额度：$limitMinutes 分钟",
+        text = "基础额度：${appUsage.baseLimitMinutes} 分钟",
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
+    if (appUsage.extensionMinutes > 0) {
+        Text(
+            text = "今日已延长：${appUsage.extensionMinutes} 分钟",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
     Text(
         text = "剩余时间：$remainingMinutes 分钟",
         style = MaterialTheme.typography.labelMedium,

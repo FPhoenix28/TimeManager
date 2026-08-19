@@ -10,5 +10,7 @@ data class AppUsageWithLimit(
     val appName: String,
     val appIcon: Bitmap?,
     val usedMinutes: Long,
-    val limitMinutes: Int?,
+    val baseLimitMinutes: Int?,
+    val extensionMinutes: Int,
+    val effectiveLimitMinutes: Int?,
 )
