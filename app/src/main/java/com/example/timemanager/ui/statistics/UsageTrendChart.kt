@@ -49,7 +49,11 @@ fun UsageTrendChart(
 }
 
 @Composable
-fun TrendComparisonText(changePercent: Double?, previousLabel: String) {
+fun TrendComparisonText(
+    changePercent: Double?,
+    previousLabel: String,
+    color: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+) {
     Text(
         text = when {
             changePercent == null -> "${previousLabel}无使用记录，暂无可比数据"
@@ -57,7 +61,8 @@ fun TrendComparisonText(changePercent: Double?, previousLabel: String) {
             changePercent < 0.0 -> "↓ ${abs(changePercent).roundToInt()}% · 比上一周期减少"
             else -> "0% · 与上一周期持平"
         },
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = color,
+        style = MaterialTheme.typography.bodyMedium,
     )
 }
 

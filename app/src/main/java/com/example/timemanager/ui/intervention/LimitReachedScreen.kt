@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -24,12 +23,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
 import com.example.timemanager.data.model.LimitInterventionRequest
 import com.example.timemanager.data.model.InterventionType
 import kotlinx.coroutines.delay
+import com.example.timemanager.ui.theme.TimeManagerSpacing
 
 @Composable
 fun LimitReachedScreen(
@@ -63,10 +61,10 @@ private fun SessionReminderContent(
             text = "要不要暂时休息一下？",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(TimeManagerSpacing.extraSmall))
         UsageLine("当前连续使用", formatDuration(request.currentSessionSeconds))
         UsageLine("今日累计使用", formatDuration(request.todayUsageSeconds))
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(TimeManagerSpacing.small))
         Button(onClick = onContinue, modifier = Modifier.fillMaxWidth()) {
             Text("继续使用")
         }
@@ -96,14 +94,14 @@ private fun DailyLimitReachedContent(
             text = request.appName,
             style = MaterialTheme.typography.titleLarge,
         )
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(TimeManagerSpacing.extraSmall))
         UsageLine("今日已使用", formatDuration(request.todayUsageSeconds))
         UsageLine("基础额度", formatDuration(request.baseLimitSeconds))
         UsageLine("今日已延长", formatDuration(request.extensionSeconds))
         UsageLine("当前有效额度", formatDuration(request.effectiveLimitSeconds))
         UsageLine("已经超出", formatDuration(request.exceededSeconds))
         UsageLine("当前连续使用", formatDuration(request.currentSessionSeconds))
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(TimeManagerSpacing.small))
 
         if (waitSeconds > 0) {
             Text(
@@ -140,26 +138,26 @@ private fun DailyLimitReachedContent(
 private fun InterventionSurface(content: @Composable ColumnScope.() -> Unit) {
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = Color.Black.copy(alpha = 0.82f),
+        color = MaterialTheme.colorScheme.scrim.copy(alpha = 0.82f),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp),
+                .padding(TimeManagerSpacing.large),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
+                shape = MaterialTheme.shapes.extraLarge,
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                 ),
             ) {
                 Column(
-                    modifier = Modifier.padding(24.dp),
+                    modifier = Modifier.padding(TimeManagerSpacing.large),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.compact),
                 ) { content() }
             }
         }

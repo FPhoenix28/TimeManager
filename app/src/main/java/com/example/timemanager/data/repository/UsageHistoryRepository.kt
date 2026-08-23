@@ -12,7 +12,17 @@ class UsageHistoryRepository(
         require(packageName.isNotBlank())
         require(usageDate.isNotBlank())
         require(usageSeconds >= 0L)
+        val key = packageName to usageDate
+        synchronized(SNAPSHOT_LOCK) {
+            if ((snapshotHighWaterMarks[key] ?: -1L) >= usageSeconds) return
+        }
         dao.upsertSnapshot(packageName, usageDate, usageSeconds)
+        synchronized(SNAPSHOT_LOCK) {
+            snapshotHighWaterMarks[key] = maxOf(
+                snapshotHighWaterMarks[key] ?: -1L,
+                usageSeconds,
+            )
+        }
     }
 
     fun observeAppHistory(packageName: String, startDate: String, endDate: String):
@@ -37,5 +47,13 @@ class UsageHistoryRepository(
         dao.getManagedTotal(packageNames, startDate, endDate)
     }
 
-    suspend fun clearAll() = dao.clearAll()
+    suspend fun clearAll() {
+        dao.clearAll()
+        synchronized(SNAPSHOT_LOCK) { snapshotHighWaterMarks.clear() }
+    }
+
+    private companion object {
+        val SNAPSHOT_LOCK = Any()
+        val snapshotHighWaterMarks = mutableMapOf<Pair<String, String>, Long>()
+    }
 }

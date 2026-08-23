@@ -1,6 +1,8 @@
 package com.example.timemanager.ui.statistics
 
 import android.graphics.Bitmap
+import android.os.SystemClock
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -74,16 +76,23 @@ class AppHistoryViewModel(
         val endDate = LocalDate.parse(usageDayProvider.currentUsageDay().key)
         val startDate = endDate.minusDays(selectedPeriod.days - 1L)
         val previousStartDate = startDate.minusDays(selectedPeriod.days)
+        val currentState = _uiState.value
+        val hasMatchingContent = currentState is AppHistoryUiState.Success &&
+            currentState.packageName == selectedPackage
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
-            _uiState.value = AppHistoryUiState.Loading
+            val totalStartedAt = SystemClock.elapsedRealtime()
+            if (!hasMatchingContent) _uiState.value = AppHistoryUiState.Loading
+            val usageStartedAt = SystemClock.elapsedRealtime()
             runCatching {
                 withContext(Dispatchers.IO) { usageTimeRepository.getTodayUsage(selectedPackage) }
             }
+            val usageDuration = SystemClock.elapsedRealtime() - usageStartedAt
             historyRepository.observeHistoryBetween(
                 previousStartDate.toString(),
                 endDate.toString(),
             ).collect { records ->
+                val calculationStartedAt = SystemClock.elapsedRealtime()
                 _uiState.value = runCatching {
                     withContext(Dispatchers.IO) {
                         val app = installedAppRepository.getUserInstalledApp(selectedPackage)
@@ -118,7 +127,17 @@ class AppHistoryViewModel(
                             days = days,
                         )
                     }
-                }.getOrElse { AppHistoryUiState.Error(it.message ?: "无法读取应用历史") }
+                }.getOrElse {
+                    if (hasMatchingContent) _uiState.value else {
+                        AppHistoryUiState.Error(it.message ?: "无法读取应用历史")
+                    }
+                }
+                Log.d(
+                    TAG,
+                    "packageName=$selectedPackage UsageStats=${usageDuration}ms " +
+                        "RoomAndCalculation=${SystemClock.elapsedRealtime() - calculationStartedAt}ms " +
+                        "Total=${SystemClock.elapsedRealtime() - totalStartedAt}ms",
+                )
             }
         }
     }
@@ -139,5 +158,9 @@ class AppHistoryViewModel(
             }
             throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
         }
+    }
+
+    private companion object {
+        const val TAG = "HistoryLoad"
     }
 }

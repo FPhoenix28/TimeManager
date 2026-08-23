@@ -1,6 +1,8 @@
 package com.example.timemanager.ui.statistics
 
 import android.graphics.Bitmap
+import android.os.SystemClock
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -56,7 +58,9 @@ class StatisticsViewModel(
     private var period = HistoryPeriod.SEVEN_DAYS
     private var loadJob: Job? = null
 
-    init { load() }
+    fun loadIfNeeded() {
+        if (_uiState.value == StatisticsUiState.Loading && loadJob?.isActive != true) load()
+    }
 
     fun selectPeriod(period: HistoryPeriod) {
         if (this.period == period && loadJob?.isActive == true) return
@@ -67,14 +71,18 @@ class StatisticsViewModel(
     fun refresh() = load()
 
     private fun load() {
+        val hasContent = _uiState.value is StatisticsUiState.Success
         loadJob?.cancel()
         val selectedPeriod = period
         val endDate = LocalDate.parse(usageDayProvider.currentUsageDay().key)
         val startDate = endDate.minusDays(selectedPeriod.days - 1L)
         val previousStartDate = startDate.minusDays(selectedPeriod.days)
         loadJob = viewModelScope.launch {
-            _uiState.value = StatisticsUiState.Loading
+            val totalStartedAt = SystemClock.elapsedRealtime()
+            if (!hasContent) _uiState.value = StatisticsUiState.Loading
+            val usageStartedAt = SystemClock.elapsedRealtime()
             runCatching { withContext(Dispatchers.IO) { usageTimeRepository.getTodayUsage() } }
+            val usageDuration = SystemClock.elapsedRealtime() - usageStartedAt
             combine(
                 trackedAppRepository.observeTrackedPackageNames(),
                 historyRepository.observeHistoryBetween(
@@ -83,6 +91,7 @@ class StatisticsViewModel(
                 ),
             ) { tracked, records -> tracked to records }
                 .collect { (tracked, records) ->
+                    val calculationStartedAt = SystemClock.elapsedRealtime()
                     _uiState.value = runCatching {
                         withContext(Dispatchers.IO) {
                             val analysis = calculator.calculateManagedApps(
@@ -111,7 +120,17 @@ class StatisticsViewModel(
                                 apps = apps,
                             )
                         }
-                    }.getOrElse { StatisticsUiState.Error(it.message ?: "无法读取历史记录") }
+                    }.getOrElse {
+                        if (hasContent) _uiState.value else {
+                            StatisticsUiState.Error(it.message ?: "无法读取历史记录")
+                        }
+                    }
+                    Log.d(
+                        TAG,
+                        "UsageStats=${usageDuration}ms " +
+                            "RoomAndCalculation=${SystemClock.elapsedRealtime() - calculationStartedAt}ms " +
+                            "Total=${SystemClock.elapsedRealtime() - totalStartedAt}ms",
+                    )
                 }
         }
     }
@@ -134,5 +153,9 @@ class StatisticsViewModel(
             }
             throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
         }
+    }
+
+    private companion object {
+        const val TAG = "StatisticsLoad"
     }
 }

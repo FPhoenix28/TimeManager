@@ -1,5 +1,6 @@
 package com.example.timemanager.ui.onboarding
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -9,8 +10,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -19,9 +20,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
 import com.example.timemanager.ui.permissions.PermissionCards
 import com.example.timemanager.ui.permissions.PermissionUiState
+import com.example.timemanager.ui.theme.TimeManagerSpacing
 
 @Composable
 fun OnboardingScreen(
@@ -33,6 +34,7 @@ fun OnboardingScreen(
     modifier: Modifier = Modifier,
 ) {
     var step by rememberSaveable { mutableIntStateOf(0) }
+    BackHandler(enabled = step > 0) { step = 0 }
 
     if (step == 0) {
         WelcomeStep(
@@ -60,7 +62,7 @@ private fun WelcomeStep(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(32.dp),
+            .padding(TimeManagerSpacing.extraLarge),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -70,7 +72,10 @@ private fun WelcomeStep(
         )
         Text(
             text = "管理你的应用使用时间，\n减少无意识刷手机。",
-            modifier = Modifier.padding(top = 16.dp, bottom = 32.dp),
+            modifier = Modifier.padding(
+                top = TimeManagerSpacing.medium,
+                bottom = TimeManagerSpacing.extraLarge,
+            ),
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -96,13 +101,13 @@ private fun PermissionStep(
 ) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(TimeManagerSpacing.medium),
+        verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.compact),
     ) {
         item {
             Text(
                 text = "完成必要设置",
-                style = MaterialTheme.typography.headlineMedium,
+                style = MaterialTheme.typography.headlineSmall,
             )
         }
         item {
@@ -130,7 +135,7 @@ private fun PermissionStep(
             }
         }
         item {
-            OutlinedButton(
+            TextButton(
                 onClick = onBack,
                 modifier = Modifier.fillMaxWidth(),
             ) {

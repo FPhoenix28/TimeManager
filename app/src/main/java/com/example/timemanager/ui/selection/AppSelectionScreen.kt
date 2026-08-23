@@ -1,9 +1,9 @@
 package com.example.timemanager.ui.selection
 
-import android.graphics.Bitmap
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -14,25 +14,26 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.painterResource
+import com.example.timemanager.R
 import com.example.timemanager.data.model.TrackedApp
+import com.example.timemanager.ui.components.AppIcon
+import com.example.timemanager.ui.components.FullScreenError
+import com.example.timemanager.ui.components.FullScreenLoading
+import com.example.timemanager.ui.theme.TimeManagerSpacing
 
 @Composable
 fun AppSelectionScreen(
@@ -41,11 +42,10 @@ fun AppSelectionScreen(
     onSelectApp: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     BackHandler(onBack = onBack)
-
     when (val state = uiState) {
-        AppSelectionUiState.Loading -> LoadingContent(modifier)
+        AppSelectionUiState.Loading -> FullScreenLoading(modifier)
         is AppSelectionUiState.Success -> AppSelectionList(
             apps = state.apps,
             onBack = onBack,
@@ -66,24 +66,35 @@ private fun AppSelectionList(
     apps: List<TrackedApp>,
     onBack: () -> Unit,
     onSelectApp: (String) -> Unit,
-    modifier: Modifier = Modifier,
+    modifier: Modifier,
 ) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(
+            start = TimeManagerSpacing.medium,
+            top = TimeManagerSpacing.small,
+            end = TimeManagerSpacing.medium,
+            bottom = TimeManagerSpacing.extraLarge,
+        ),
     ) {
-        item(key = "selection_header") {
+        item("header") {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = TimeManagerSpacing.small),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = onBack) { Text("返回") }
+                IconButton(onClick = onBack) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_arrow_back),
+                        contentDescription = "返回",
+                    )
+                }
                 Column {
-                    Text("添加管理应用", style = MaterialTheme.typography.headlineSmall)
+                    Text("添加管理应用", style = MaterialTheme.typography.titleLarge)
                     Text(
-                        text = "选择应用后设置每日额度",
-                        style = MaterialTheme.typography.bodyMedium,
+                        "选择后设置每日额度",
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -91,81 +102,45 @@ private fun AppSelectionList(
         }
 
         if (apps.isEmpty()) {
-            item(key = "selection_empty") {
-                Text("没有找到可选择的用户应用")
+            item("empty") {
+                Text(
+                    "没有找到可选择的用户应用",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = TimeManagerSpacing.extraLarge),
+                )
             }
         } else {
-            items(
-                items = apps,
-                key = TrackedApp::packageName,
-            ) { app ->
-                TrackedAppCard(
-                    app = app,
-                    onClick = { onSelectApp(app.packageName) },
+            items(items = apps, key = TrackedApp::packageName) { app ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSelectApp(app.packageName) }
+                        .padding(vertical = TimeManagerSpacing.medium),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    AppIcon(bitmap = app.appIcon, appName = app.appName)
+                    Spacer(Modifier.size(TimeManagerSpacing.medium))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(app.appName, style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            app.packageName,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Text(
+                        "选择  ›",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                HorizontalDivider(
+                    modifier = Modifier.padding(start = TimeManagerSpacing.extraLarge * 3),
+                    color = MaterialTheme.colorScheme.outlineVariant,
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun TrackedAppCard(app: TrackedApp, onClick: () -> Unit) {
-    Card(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        ),
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TrackedAppIcon(app.appIcon, app.appName)
-            Spacer(modifier = Modifier.size(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(app.appName, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    text = app.packageName,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Text("选择", color = MaterialTheme.colorScheme.primary)
-        }
-    }
-}
-
-@Composable
-private fun TrackedAppIcon(appIcon: Bitmap?, appName: String) {
-    val imageBitmap = remember(appIcon) { appIcon?.asImageBitmap() }
-    if (imageBitmap != null) {
-        Image(
-            bitmap = imageBitmap,
-            contentDescription = "$appName 图标",
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .size(48.dp)
-                .clip(RoundedCornerShape(12.dp)),
-        )
-    } else {
-        Text(
-            text = appName.firstOrNull()?.toString() ?: "?",
-            modifier = Modifier.size(48.dp),
-            style = MaterialTheme.typography.headlineMedium,
-        )
-    }
-}
-
-@Composable
-private fun LoadingContent(modifier: Modifier) {
-    Column(
-        modifier = modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        CircularProgressIndicator()
     }
 }
 
@@ -176,18 +151,11 @@ private fun ErrorContent(
     onRetry: () -> Unit,
     modifier: Modifier,
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Text("加载目标应用失败")
-        Text(message)
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            TextButton(onClick = onBack) { Text("返回") }
-            Button(onClick = onRetry) { Text("重试") }
-        }
-    }
+    FullScreenError(
+        title = "加载目标应用失败",
+        message = message,
+        onRetry = onRetry,
+        onBack = onBack,
+        modifier = modifier,
+    )
 }

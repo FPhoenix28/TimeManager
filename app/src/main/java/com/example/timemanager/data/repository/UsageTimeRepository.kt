@@ -19,13 +19,14 @@ class UsageTimeRepository(
     private var lastSessionSeconds = 0L
     private val estimatesByPackage = mutableMapOf<String, Long>()
     private val persistedSecondsByPackage = mutableMapOf<String, Long>()
+    private val historyPersistedSecondsByPackage = mutableMapOf<String, Long>()
 
     suspend fun recordTimerState(timerState: TimerState): Long {
         val usageDay = usageDayProvider.currentUsageDay()
         ensureRuntimeDate(usageDay.key)
 
         if (activePackageName != timerState.packageName) {
-            flushActiveRecord(usageDay.key)
+            flushActiveRecord(usageDay.key, forceHistory = true)
             activePackageName = timerState.packageName
             lastSessionSeconds = timerState.currentSessionSeconds
 
@@ -106,13 +107,15 @@ class UsageTimeRepository(
 
     suspend fun flush() {
         val date = runtimeDate ?: return
-        flushActiveRecord(date)
+        flushActiveRecord(date, forceHistory = true)
     }
 
     private suspend fun ensureRuntimeDate(today: String) {
         if (runtimeDate == today) return
 
-        runtimeDate?.let { previousDate -> flushActiveRecord(previousDate) }
+        runtimeDate?.let { previousDate ->
+            flushActiveRecord(previousDate, forceHistory = true)
+        }
 
         val storedRecords = preferences.getRecordsForDate(today)
         runtimeDate = today
@@ -122,17 +125,27 @@ class UsageTimeRepository(
         estimatesByPackage.putAll(storedRecords)
         persistedSecondsByPackage.clear()
         persistedSecondsByPackage.putAll(storedRecords)
+        historyPersistedSecondsByPackage.clear()
+        historyPersistedSecondsByPackage.putAll(storedRecords)
     }
 
-    private suspend fun flushActiveRecord(date: String) {
+    private suspend fun flushActiveRecord(date: String, forceHistory: Boolean = false) {
         val packageName = activePackageName ?: return
         val estimate = estimatesByPackage[packageName] ?: return
-        if (persistedSecondsByPackage[packageName] != estimate) {
-            persist(packageName, date, estimate)
+        if (
+            persistedSecondsByPackage[packageName] != estimate ||
+            forceHistory && historyPersistedSecondsByPackage[packageName] != estimate
+        ) {
+            persist(packageName, date, estimate, forceHistory)
         }
     }
 
-    private suspend fun persist(packageName: String, date: String, seconds: Long) {
+    private suspend fun persist(
+        packageName: String,
+        date: String,
+        seconds: Long,
+        forceHistory: Boolean = false,
+    ) {
         preferences.save(
             RealtimeUsageRecord(
                 packageName = packageName,
@@ -140,8 +153,12 @@ class UsageTimeRepository(
                 seconds = seconds,
             ),
         )
-        historyRepository.saveSnapshot(packageName, date, seconds)
         persistedSecondsByPackage[packageName] = seconds
+        val historyPersisted = historyPersistedSecondsByPackage[packageName] ?: 0L
+        if (forceHistory || seconds - historyPersisted >= HISTORY_PERSIST_INTERVAL_SECONDS) {
+            historyRepository.saveSnapshot(packageName, date, seconds)
+            historyPersistedSecondsByPackage[packageName] = seconds
+        }
     }
 
     private fun historicalUsageSeconds(
@@ -157,5 +174,6 @@ class UsageTimeRepository(
     private companion object {
         const val MILLIS_PER_SECOND = 1_000L
         const val PERSIST_INTERVAL_SECONDS = 5L
+        const val HISTORY_PERSIST_INTERVAL_SECONDS = 30L
     }
 }

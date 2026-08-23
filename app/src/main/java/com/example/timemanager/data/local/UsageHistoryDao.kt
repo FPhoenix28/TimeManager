@@ -10,7 +10,8 @@ interface UsageHistoryDao {
         """INSERT INTO usage_history(packageName, usageDate, usageSeconds)
         VALUES(:packageName, :usageDate, :usageSeconds)
         ON CONFLICT(packageName, usageDate) DO UPDATE SET
-        usageSeconds = MAX(usage_history.usageSeconds, excluded.usageSeconds)""",
+        usageSeconds = excluded.usageSeconds
+        WHERE excluded.usageSeconds > usage_history.usageSeconds""",
     )
     suspend fun upsertSnapshot(packageName: String, usageDate: String, usageSeconds: Long)
 

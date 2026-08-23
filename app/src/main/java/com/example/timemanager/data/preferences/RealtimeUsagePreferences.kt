@@ -23,8 +23,14 @@ class RealtimeUsagePreferences(context: Context) {
     private val dataStore = context.applicationContext.realtimeUsageDataStore
 
     suspend fun getRecordsForDate(date: String): Map<String, Long> {
-        resetIfDateChanged(date)
-        return safePreferences.first().asMap().mapNotNull { (key, value) ->
+        val current = safePreferences.first()
+        val preferences = if (current[DATE_KEY] == date) {
+            current
+        } else {
+            resetForDate(date)
+            safePreferences.first()
+        }
+        return preferences.asMap().mapNotNull { (key, value) ->
             val packageName = key.name.removePrefix(SECONDS_KEY_PREFIX)
             if (
                 key.name.startsWith(SECONDS_KEY_PREFIX) &&
@@ -51,7 +57,7 @@ class RealtimeUsagePreferences(context: Context) {
         }
     }
 
-    private suspend fun resetIfDateChanged(date: String) {
+    private suspend fun resetForDate(date: String) {
         dataStore.edit { preferences ->
             if (preferences[DATE_KEY] != date) {
                 preferences.clear()

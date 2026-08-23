@@ -11,6 +11,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -60,11 +67,12 @@ import com.example.timemanager.ui.statistics.StatisticsScreen
 import com.example.timemanager.ui.statistics.StatisticsViewModel
 import com.example.timemanager.ui.statistics.AppHistoryScreen
 import com.example.timemanager.ui.statistics.AppHistoryViewModel
+import com.example.timemanager.ui.components.PrimaryDestination
+import com.example.timemanager.ui.components.TimeManagerNavigationBar
 import com.example.timemanager.utils.UsagePermissionManager
 import com.example.timemanager.utils.OverlayPermissionManager
 import com.example.timemanager.notifications.NotificationHelper
 import com.example.timemanager.service.UsageMonitorService
-import com.example.timemanager.worker.UsageLimitWorkScheduler
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -82,7 +90,9 @@ class MainActivity : ComponentActivity() {
     private lateinit var statisticsViewModel: StatisticsViewModel
     private lateinit var appHistoryViewModel: AppHistoryViewModel
     private var detailPackageName: String? = null
+    private var appHistoryPackageName: String? = null
     private var appHistoryBackDestination = AppDestination.HOME
+    private var permissionsBackDestination = AppDestination.HOME
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { isGranted ->
@@ -92,9 +102,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        restoreNavigationState(savedInstanceState)
         enableEdgeToEdge()
         NotificationHelper(applicationContext).createNotificationChannel()
-        UsageLimitWorkScheduler.cancelLegacySchedule(applicationContext)
         onboardingPreferences = OnboardingPreferences(applicationContext)
         refreshPermissionStatus()
         val limitRepository = LimitRepository(
@@ -186,17 +196,45 @@ class MainActivity : ComponentActivity() {
                 installedAppRepository = installedAppRepository,
             ),
         )[AppHistoryViewModel::class.java]
+        restoreDestinationContent()
         lifecycleScope.launch {
             val completed = onboardingPreferences.observeCompleted().first()
             onboardingCompleted = completed
             if (completed && hasUsageAccess) {
                 startUsageMonitorService()
-                homeViewModel.loadTodayUsage()
+                if (destination == AppDestination.HOME) {
+                    homeViewModel.loadTodayUsage()
+                }
             }
         }
         setContent {
             TimeManagerTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+                val primaryDestination = destination.toPrimaryDestination()
+                Scaffold(
+                    modifier = Modifier.fillMaxSize(),
+                    bottomBar = {
+                        if (onboardingCompleted == true && primaryDestination != null) {
+                            TimeManagerNavigationBar(
+                                selected = primaryDestination,
+                                onSelect = { selected ->
+                                    when (selected) {
+                                        PrimaryDestination.HOME -> {
+                                            destination = AppDestination.HOME
+                                        }
+                                        PrimaryDestination.STATISTICS -> {
+                                            statisticsViewModel.loadIfNeeded()
+                                            destination = AppDestination.STATISTICS
+                                        }
+                                        PrimaryDestination.MANAGEMENT -> {
+                                            limitViewModel.loadIfNeeded()
+                                            destination = AppDestination.LIMITS
+                                        }
+                                    }
+                                },
+                            )
+                        }
+                    },
+                ) { innerPadding ->
                     val permissionState = PermissionUiState(
                         usageAccessGranted = hasUsageAccess,
                         notificationGranted = hasNotificationPermission,
@@ -219,16 +257,30 @@ class MainActivity : ComponentActivity() {
                             onComplete = ::completeOnboarding,
                             modifier = Modifier.padding(innerPadding),
                         )
-                        true -> {
-                        when (destination) {
+                        true -> AnimatedContent(
+                            targetState = destination,
+                            transitionSpec = {
+                                fadeIn(
+                                    animationSpec = tween(DESTINATION_FADE_IN_MILLIS),
+                                ) togetherWith fadeOut(
+                                    animationSpec = tween(DESTINATION_FADE_OUT_MILLIS),
+                                ) using SizeTransform(
+                                    clip = false,
+                                    sizeAnimationSpec = { _, _ -> snap() },
+                                )
+                            },
+                            label = "TimeManagerDestinationFade",
+                        ) { animatedDestination ->
+                        when (animatedDestination) {
                             AppDestination.HOME -> HomeScreen(
                                 viewModel = homeViewModel,
                                 hasRequiredPermissions = permissionState.allRequiredGranted,
                                 onOpenPermissionSettings = {
+                                    permissionsBackDestination = AppDestination.HOME
                                     destination = AppDestination.PERMISSIONS
                                 },
                                 onOpenManagement = {
-                                    limitViewModel.loadApps()
+                                    limitViewModel.loadIfNeeded()
                                     destination = AppDestination.LIMITS
                                 },
                                 onOpenAppDetail = { packageName ->
@@ -237,7 +289,7 @@ class MainActivity : ComponentActivity() {
                                     destination = AppDestination.MANAGED_APP_DETAIL
                                 },
                                 onOpenStatistics = {
-                                    statisticsViewModel.refresh()
+                                    statisticsViewModel.loadIfNeeded()
                                     destination = AppDestination.STATISTICS
                                 },
                                 modifier = Modifier.padding(innerPadding),
@@ -245,9 +297,14 @@ class MainActivity : ComponentActivity() {
                             AppDestination.LIMITS -> LimitScreen(
                                 viewModel = limitViewModel,
                                 onBack = { destination = AppDestination.HOME },
+                                showBack = false,
                                 onAddApp = {
-                                    appSelectionViewModel.loadApps()
+                                    appSelectionViewModel.loadIfNeeded()
                                     destination = AppDestination.APP_SELECTION
+                                },
+                                onOpenPermissions = {
+                                    permissionsBackDestination = AppDestination.LIMITS
+                                    destination = AppDestination.PERMISSIONS
                                 },
                                 modifier = Modifier.padding(innerPadding),
                             )
@@ -262,7 +319,7 @@ class MainActivity : ComponentActivity() {
                             )
                             AppDestination.PERMISSIONS -> PermissionSettingsScreen(
                                 state = permissionState,
-                                onBack = { destination = AppDestination.HOME },
+                                onBack = { destination = permissionsBackDestination },
                                 onRequestUsageAccess = ::openUsageAccessSettings,
                                 onRequestNotification = ::requestNotificationPermission,
                                 onRequestOverlay = ::openOverlaySettings,
@@ -281,6 +338,7 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onOpenHistory = { packageName ->
                                     appHistoryBackDestination = AppDestination.MANAGED_APP_DETAIL
+                                    appHistoryPackageName = packageName
                                     appHistoryViewModel.open(packageName)
                                     destination = AppDestination.APP_HISTORY
                                 },
@@ -289,8 +347,10 @@ class MainActivity : ComponentActivity() {
                             AppDestination.STATISTICS -> StatisticsScreen(
                                 viewModel = statisticsViewModel,
                                 onBack = { destination = AppDestination.HOME },
+                                showBack = false,
                                 onOpenAppHistory = { packageName ->
                                     appHistoryBackDestination = AppDestination.STATISTICS
+                                    appHistoryPackageName = packageName
                                     appHistoryViewModel.open(packageName)
                                     destination = AppDestination.APP_HISTORY
                                 },
@@ -302,7 +362,7 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.padding(innerPadding),
                             )
                         }
-                        }
+                    }
                     }
                 }
             }
@@ -314,12 +374,56 @@ class MainActivity : ComponentActivity() {
         refreshPermissionStatus()
         if (onboardingCompleted == true && hasUsageAccess) {
             startUsageMonitorService()
-            homeViewModel.loadTodayUsage()
-            if (destination == AppDestination.MANAGED_APP_DETAIL) {
-                managedAppDetailViewModel.refresh()
+            when (destination) {
+                AppDestination.HOME -> homeViewModel.loadTodayUsage()
+                AppDestination.MANAGED_APP_DETAIL -> managedAppDetailViewModel.refresh()
+                AppDestination.STATISTICS -> statisticsViewModel.refresh()
+                AppDestination.APP_HISTORY -> appHistoryViewModel.refresh()
+                AppDestination.LIMITS,
+                AppDestination.APP_SELECTION,
+                AppDestination.PERMISSIONS,
+                -> Unit
             }
-            if (destination == AppDestination.STATISTICS) statisticsViewModel.refresh()
-            if (destination == AppDestination.APP_HISTORY) appHistoryViewModel.refresh()
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString(STATE_DESTINATION, destination.name)
+        outState.putString(STATE_PERMISSION_BACK_DESTINATION, permissionsBackDestination.name)
+        outState.putString(STATE_HISTORY_BACK_DESTINATION, appHistoryBackDestination.name)
+        outState.putString(STATE_DETAIL_PACKAGE, detailPackageName)
+        outState.putString(STATE_HISTORY_PACKAGE, appHistoryPackageName)
+        super.onSaveInstanceState(outState)
+    }
+
+    private fun restoreNavigationState(savedInstanceState: Bundle?) {
+        if (savedInstanceState == null) return
+        destination = savedInstanceState.getString(STATE_DESTINATION)
+            .toAppDestinationOrDefault(AppDestination.HOME)
+        permissionsBackDestination = savedInstanceState
+            .getString(STATE_PERMISSION_BACK_DESTINATION)
+            .toAppDestinationOrDefault(AppDestination.HOME)
+        appHistoryBackDestination = savedInstanceState
+            .getString(STATE_HISTORY_BACK_DESTINATION)
+            .toAppDestinationOrDefault(AppDestination.HOME)
+        detailPackageName = savedInstanceState.getString(STATE_DETAIL_PACKAGE)
+        appHistoryPackageName = savedInstanceState.getString(STATE_HISTORY_PACKAGE)
+    }
+
+    private fun restoreDestinationContent() {
+        when (destination) {
+            AppDestination.LIMITS -> limitViewModel.loadIfNeeded()
+            AppDestination.APP_SELECTION -> appSelectionViewModel.loadIfNeeded()
+            AppDestination.MANAGED_APP_DETAIL -> detailPackageName?.let {
+                managedAppDetailViewModel.open(it)
+            } ?: run { destination = AppDestination.HOME }
+            AppDestination.STATISTICS -> statisticsViewModel.refresh()
+            AppDestination.APP_HISTORY -> appHistoryPackageName?.let {
+                appHistoryViewModel.open(it)
+            } ?: run { destination = appHistoryBackDestination }
+            AppDestination.HOME,
+            AppDestination.PERMISSIONS,
+            -> Unit
         }
     }
 
@@ -377,6 +481,13 @@ class MainActivity : ComponentActivity() {
 
     private companion object {
         const val TAG = "MainActivity"
+        const val STATE_DESTINATION = "navigation.destination"
+        const val STATE_PERMISSION_BACK_DESTINATION = "navigation.permissionBack"
+        const val STATE_HISTORY_BACK_DESTINATION = "navigation.historyBack"
+        const val STATE_DETAIL_PACKAGE = "navigation.detailPackage"
+        const val STATE_HISTORY_PACKAGE = "navigation.historyPackage"
+        const val DESTINATION_FADE_IN_MILLIS = 180
+        const val DESTINATION_FADE_OUT_MILLIS = 120
     }
 }
 
@@ -389,3 +500,13 @@ private enum class AppDestination {
     STATISTICS,
     APP_HISTORY,
 }
+
+private fun AppDestination.toPrimaryDestination(): PrimaryDestination? = when (this) {
+    AppDestination.HOME -> PrimaryDestination.HOME
+    AppDestination.STATISTICS -> PrimaryDestination.STATISTICS
+    AppDestination.LIMITS -> PrimaryDestination.MANAGEMENT
+    else -> null
+}
+
+private fun String?.toAppDestinationOrDefault(default: AppDestination): AppDestination =
+    this?.let { value -> AppDestination.entries.firstOrNull { it.name == value } } ?: default

@@ -1,9 +1,8 @@
 package com.example.timemanager.ui.limit
 
-import android.graphics.Bitmap
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -14,46 +13,53 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.unit.dp
+import com.example.timemanager.R
+import com.example.timemanager.ui.components.AppIcon
+import com.example.timemanager.ui.components.EmptyState
+import com.example.timemanager.ui.components.FullScreenError
+import com.example.timemanager.ui.components.FullScreenLoading
+import com.example.timemanager.ui.theme.TimeManagerSpacing
 
 @Composable
 fun LimitScreen(
     viewModel: LimitViewModel,
     onBack: () -> Unit,
     onAddApp: () -> Unit,
+    onOpenPermissions: () -> Unit,
     modifier: Modifier = Modifier,
+    showBack: Boolean = true,
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     BackHandler(onBack = onBack)
 
     when (val state = uiState) {
-        LimitUiState.Loading -> LoadingContent(modifier)
+        LimitUiState.Loading -> FullScreenLoading(modifier)
         is LimitUiState.Success -> {
             ManagedAppsList(
                 apps = state.apps,
                 onBack = onBack,
+                showBack = showBack,
                 onAddApp = onAddApp,
+                onOpenPermissions = onOpenPermissions,
                 onEdit = viewModel::beginEdit,
                 onRemove = viewModel::removeManagedApp,
                 modifier = modifier,
@@ -80,98 +86,155 @@ fun LimitScreen(
 private fun ManagedAppsList(
     apps: List<ManagedAppItemUiState>,
     onBack: () -> Unit,
+    showBack: Boolean,
     onAddApp: () -> Unit,
+    onOpenPermissions: () -> Unit,
     onEdit: (String) -> Unit,
     onRemove: (String) -> Unit,
     modifier: Modifier,
 ) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(
+            start = TimeManagerSpacing.medium,
+            top = TimeManagerSpacing.small,
+            end = TimeManagerSpacing.medium,
+            bottom = TimeManagerSpacing.extraLarge,
+        ),
     ) {
-        item(key = "management_header") {
+        item("header") {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = TimeManagerSpacing.small),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = onBack) { Text("返回") }
+                if (showBack) {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_arrow_back),
+                            contentDescription = "返回",
+                        )
+                    }
+                }
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("应用管理", style = MaterialTheme.typography.headlineSmall)
+                    Text("应用管理", style = MaterialTheme.typography.titleLarge)
                     Text(
-                        text = "仅管理已选择的应用",
+                        "只对你主动选择的应用进行计时和提醒",
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
         }
-
-        item(key = "add_managed_app") {
+        item("add") {
             Button(
                 onClick = onAddApp,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("添加管理应用")
-            }
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = TimeManagerSpacing.large),
+            ) { Text("添加管理应用") }
+        }
+        item("appsTitle") {
+            Text(
+                text = "已管理应用",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(
+                    top = TimeManagerSpacing.extraLarge,
+                    bottom = TimeManagerSpacing.small,
+                ),
+            )
         }
 
         if (apps.isEmpty()) {
-            item(key = "managed_apps_empty") {
-                Text("还没有管理任何应用，请先添加应用并设置每日额度")
+            item("empty") {
+                EmptyState(
+                    title = "还没有管理任何应用",
+                    message = "先选择一个容易占用你时间的应用，\n再为它设置每日额度。",
+                    actionLabel = "选择应用",
+                    onAction = onAddApp,
+                    modifier = Modifier.padding(vertical = TimeManagerSpacing.large),
+                )
             }
         } else {
             items(items = apps, key = ManagedAppItemUiState::packageName) { app ->
-                ManagedAppCard(
+                ManagedAppRow(
                     app = app,
                     onEdit = { onEdit(app.packageName) },
                     onRemove = { onRemove(app.packageName) },
                 )
+                HorizontalDivider(
+                    modifier = Modifier.padding(start = TimeManagerSpacing.extraLarge * 3),
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                )
+            }
+        }
+
+        item("systemTitle") {
+            Text(
+                text = "系统设置",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(
+                    top = TimeManagerSpacing.extraLarge,
+                    bottom = TimeManagerSpacing.small,
+                ),
+            )
+        }
+        item("permissions") {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = TimeManagerSpacing.medium),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("权限与系统设置", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        "查看使用情况、通知和悬浮窗权限",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                TextButton(onClick = onOpenPermissions) { Text("查看  ›") }
             }
         }
     }
 }
 
 @Composable
-private fun ManagedAppCard(
+private fun ManagedAppRow(
     app: ManagedAppItemUiState,
     onEdit: () -> Unit,
     onRemove: () -> Unit,
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        ),
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = TimeManagerSpacing.medium),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                AppIcon(app.appIcon, app.appName)
-                Spacer(modifier = Modifier.size(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(app.appName, style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        text = "今日使用：${formatDuration(app.todayUsageSeconds)}",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = app.limitMinutes?.let { "每日额度：$it 分钟" }
-                            ?: "每日额度：未设置",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                TextButton(onClick = onEdit, enabled = !app.isRemoving) { Text("编辑") }
-                TextButton(onClick = onRemove, enabled = !app.isRemoving) {
-                    Text(if (app.isRemoving) "移除中" else "移除管理")
-                }
+        AppIcon(bitmap = app.appIcon, appName = app.appName)
+        Spacer(Modifier.size(TimeManagerSpacing.medium))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(app.appName, style = MaterialTheme.typography.titleSmall)
+            Text(
+                "今日 ${formatDuration(app.todayUsageSeconds)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                app.limitMinutes?.let { "每日额度 $it 分钟" } ?: "每日额度未设置",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Column(horizontalAlignment = Alignment.End) {
+            TextButton(onClick = onEdit, enabled = !app.isRemoving) { Text("编辑") }
+            TextButton(onClick = onRemove, enabled = !app.isRemoving) {
+                Text(
+                    text = if (app.isRemoving) "移除中" else "移除",
+                    color = MaterialTheme.colorScheme.error,
+                )
             }
         }
     }
@@ -188,7 +251,7 @@ fun LimitEditorDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (editor.isNew) "添加 ${editor.appName}" else "编辑 ${editor.appName}") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.small)) {
                 Text(if (editor.isNew) "设置额度后，该应用才会加入管理列表。" else "修改每日使用额度。")
                 OutlinedTextField(
                     value = editor.limitInput,
@@ -198,9 +261,7 @@ fun LimitEditorDialog(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                     isError = editor.errorMessage != null,
-                    supportingText = editor.errorMessage?.let { message ->
-                        { Text(message) }
-                    },
+                    supportingText = editor.errorMessage?.let { message -> { Text(message) } },
                 )
             }
         },
@@ -208,42 +269,12 @@ fun LimitEditorDialog(
             Button(
                 onClick = onSave,
                 enabled = editor.limitInput.isNotBlank() && !editor.isSaving,
-            ) {
-                Text(if (editor.isSaving) "保存中" else "保存")
-            }
+            ) { Text(if (editor.isSaving) "保存中" else "保存") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss, enabled = !editor.isSaving) { Text("取消") }
         },
     )
-}
-
-@Composable
-private fun AppIcon(appIcon: Bitmap?, appName: String) {
-    val imageBitmap = remember(appIcon) { appIcon?.asImageBitmap() }
-    if (imageBitmap != null) {
-        Image(
-            bitmap = imageBitmap,
-            contentDescription = "$appName 图标",
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)),
-        )
-    } else {
-        Text(
-            text = appName.firstOrNull()?.toString() ?: "?",
-            modifier = Modifier.size(48.dp),
-            style = MaterialTheme.typography.headlineMedium,
-        )
-    }
-}
-
-@Composable
-private fun LoadingContent(modifier: Modifier) {
-    Column(
-        modifier = modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) { CircularProgressIndicator() }
 }
 
 @Composable
@@ -253,22 +284,17 @@ private fun ErrorContent(
     onBack: () -> Unit,
     modifier: Modifier,
 ) {
-    Column(
-        modifier = modifier.fillMaxSize().padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Text("加载应用管理失败")
-        Text(message)
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            TextButton(onClick = onBack) { Text("返回") }
-            Button(onClick = onRetry) { Text("重试") }
-        }
-    }
+    FullScreenError(
+        title = "加载应用管理失败",
+        message = message,
+        onRetry = onRetry,
+        onBack = onBack,
+        modifier = modifier,
+    )
 }
 
 private fun formatDuration(totalSeconds: Long): String {
     val hours = totalSeconds / 3_600L
     val minutes = (totalSeconds % 3_600L) / 60L
-    return if (hours > 0L) "$hours 小时 $minutes 分钟" else "$minutes 分钟"
+    return if (hours > 0L) "${hours}h ${minutes}min" else "$minutes min"
 }

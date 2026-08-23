@@ -1,6 +1,8 @@
 package com.example.timemanager.ui.home
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -11,30 +13,31 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Card
-import androidx.compose.material3.Button
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.runtime.remember
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.runtime.remember
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.foundation.Image
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import android.graphics.Bitmap
+import androidx.compose.ui.res.painterResource
+import com.example.timemanager.R
+import com.example.timemanager.ui.components.AppIcon
+import com.example.timemanager.ui.components.EmptyState
+import com.example.timemanager.ui.components.FullScreenError
+import com.example.timemanager.ui.components.FullScreenLoading
+import com.example.timemanager.ui.components.UsageProgressIndicator
 import com.example.timemanager.ui.statistics.TrendComparisonText
+import com.example.timemanager.ui.theme.TimeManagerSpacing
 
 @Composable
 fun HomeScreen(
@@ -46,11 +49,11 @@ fun HomeScreen(
     onOpenStatistics: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     when (val state = uiState) {
         HomeUiState.Loading -> LoadingContent(modifier)
-        is HomeUiState.Success -> UsageList(
+        is HomeUiState.Success -> HomeDashboard(
             appUsages = state.appUsages,
             weeklyTrend = state.weeklyTrend,
             hasRequiredPermissions = hasRequiredPermissions,
@@ -69,17 +72,11 @@ fun HomeScreen(
 
 @Composable
 private fun LoadingContent(modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        CircularProgressIndicator()
-    }
+    FullScreenLoading(modifier)
 }
 
 @Composable
-private fun UsageList(
+private fun HomeDashboard(
     appUsages: List<AppUsageWithLimit>,
     weeklyTrend: WeeklyTrendSummary,
     hasRequiredPermissions: Boolean,
@@ -89,291 +86,252 @@ private fun UsageList(
     onOpenStatistics: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val usageSummary = remember(appUsages) {
-        UsageSummary(
-            totalUsageMinutes = appUsages.sumOf(AppUsageWithLimit::usedMinutes),
-            mostUsedApp = appUsages.firstOrNull(),
-        )
+    val managedApps = remember(appUsages) {
+        appUsages
+            .filter { it.baseLimitSeconds != null }
+            .sortedByDescending(AppUsageWithLimit::usedSeconds)
+    }
+    val totalUsageSeconds = remember(managedApps) {
+        managedApps.sumOf(AppUsageWithLimit::usedSeconds)
     }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(
+            start = TimeManagerSpacing.medium,
+            top = TimeManagerSpacing.small,
+            end = TimeManagerSpacing.medium,
+            bottom = TimeManagerSpacing.extraLarge,
+        ),
     ) {
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = "TimeManager",
-                    style = MaterialTheme.typography.headlineMedium,
-                )
-                Text(
-                    text = "今日使用情况",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+        item("topBar") {
+            HomeTopBar(onOpenSettings = onOpenPermissionSettings)
         }
 
-        item {
-            UsageSummaryCard(
-                totalUsageMinutes = usageSummary.totalUsageMinutes,
-                mostUsedApp = usageSummary.mostUsedApp,
+        item("todaySummary") {
+            TodaySummary(
+                totalUsageSeconds = totalUsageSeconds,
+                weeklyTrend = weeklyTrend,
+                onOpenStatistics = onOpenStatistics,
             )
-        }
-
-        item {
-            WeeklyTrendCard(
-                trend = weeklyTrend,
-                onClick = onOpenStatistics,
-            )
-        }
-
-        item {
-            Button(
-                onClick = onOpenManagement,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("管理应用")
-            }
-        }
-
-        item {
-            OutlinedButton(
-                onClick = onOpenStatistics,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("使用统计")
-            }
-        }
-
-        item {
-            OutlinedButton(
-                onClick = onOpenPermissionSettings,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("权限与系统设置")
-            }
         }
 
         if (!hasRequiredPermissions) {
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            item("permissionWarning") {
+                PermissionWarning(onOpenPermissionSettings)
+            }
+        }
+
+        item("appsHeader") {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        top = TimeManagerSpacing.large,
+                        bottom = TimeManagerSpacing.small,
                     ),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Text(
-                            text = "TimeManager 缺少必要权限",
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                        Text(
-                            text = "部分统计、提醒或冷静页功能可能无法运行。",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        OutlinedButton(
-                            onClick = onOpenPermissionSettings,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text("重新授权")
-                        }
-                    }
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "今日应用",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                if (managedApps.isNotEmpty()) {
+                    TextButton(onClick = onOpenManagement) { Text("管理") }
                 }
             }
         }
 
-        if (appUsages.isEmpty()) {
-            item {
-                Text("今天还没有可显示的使用记录")
+        if (managedApps.isEmpty()) {
+            item("empty") {
+                EmptyState(
+                    title = "还没有管理任何应用",
+                    message = "选择容易占用你时间的应用，\nTimeManager 会帮助你关注使用时间。",
+                    actionLabel = "选择应用",
+                    onAction = onOpenManagement,
+                    modifier = Modifier.padding(vertical = TimeManagerSpacing.extraLarge),
+                )
             }
         } else {
             items(
-                items = appUsages,
-                key = { appUsage -> appUsage.packageName },
+                items = managedApps,
+                key = AppUsageWithLimit::packageName,
             ) { appUsage ->
-                UsageCard(
+                ManagedAppUsageItem(
                     appUsage = appUsage,
                     onClick = { onOpenAppDetail(appUsage.packageName) },
                 )
-            }
-        }
-    }
-}
-
-@Composable
-private fun WeeklyTrendCard(trend: WeeklyTrendSummary, onClick: () -> Unit) {
-    Card(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text("本周受管理应用使用", style = MaterialTheme.typography.titleMedium)
-            Text(
-                formatSecondsDuration(trend.totalSeconds),
-                style = MaterialTheme.typography.headlineSmall,
-            )
-            TrendComparisonText(trend.changePercent, "上周")
-            Text("查看统计 >", color = MaterialTheme.colorScheme.primary)
-        }
-    }
-}
-
-@Composable
-private fun UsageSummaryCard(
-    totalUsageMinutes: Long,
-    mostUsedApp: AppUsageWithLimit?,
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
-        ),
-    ) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                text = "今日总使用时间",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-            Text(
-                text = formatUsageDuration(totalUsageMinutes),
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-            Text(
-                text = if (mostUsedApp == null) {
-                    "使用最多：暂无记录"
-                } else {
-                    "使用最多：${mostUsedApp.appName} · ${formatUsageDuration(mostUsedApp.usedMinutes)}"
-                },
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-        }
-    }
-}
-
-@Composable
-private fun UsageCard(appUsage: AppUsageWithLimit, onClick: () -> Unit) {
-    val appIcon = remember(appUsage.appIcon) {
-        appUsage.appIcon?.asImageBitmap()
-    }
-
-    Card(
-        onClick = onClick,
-        enabled = appUsage.baseLimitSeconds != null,
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        ),
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            AppIcon(
-                appIcon = appIcon,
-                appName = appUsage.appName,
-            )
-            Spacer(modifier = Modifier.size(16.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = appUsage.appName,
-                    style = MaterialTheme.typography.titleMedium,
+                HorizontalDivider(
+                    modifier = Modifier.padding(start = TimeManagerSpacing.medium + TimeManagerSpacing.extraLarge),
+                    color = MaterialTheme.colorScheme.outlineVariant,
                 )
-                UsageLimitContent(appUsage)
             }
         }
     }
 }
 
 @Composable
-private fun UsageLimitContent(appUsage: AppUsageWithLimit) {
-    val effectiveLimitSeconds = appUsage.effectiveLimitSeconds
-    if (effectiveLimitSeconds == null) {
+private fun HomeTopBar(onOpenSettings: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = TimeManagerSpacing.small),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Text(
-            text = "今日使用：${formatAllowance(appUsage.usedSeconds)}",
+            text = "TimeManager",
+            style = MaterialTheme.typography.headlineSmall,
+            modifier = Modifier.weight(1f),
+        )
+        IconButton(onClick = onOpenSettings) {
+            Icon(
+                painter = painterResource(R.drawable.ic_settings),
+                contentDescription = "权限与系统设置",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TodaySummary(
+    totalUsageSeconds: Long,
+    weeklyTrend: WeeklyTrendSummary,
+    onOpenStatistics: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.padding(top = TimeManagerSpacing.large),
+        verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.small),
+    ) {
+        Text(
+            text = "今天",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = formatDashboardDuration(totalUsageSeconds),
+            style = MaterialTheme.typography.displaySmall,
+        )
+        Text(
+            text = "受管理应用总使用时间",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        return
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onOpenStatistics)
+                .padding(vertical = TimeManagerSpacing.small),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "过去7天 ${formatCompactDuration(weeklyTrend.totalSeconds)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                TrendComparisonText(weeklyTrend.changePercent, "前7天")
+            }
+            Text(
+                text = "查看统计  ›",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
     }
-
-    val remainingSeconds = (effectiveLimitSeconds - appUsage.usedSeconds)
-        .coerceAtLeast(0L)
-    val usageProgress = when {
-        effectiveLimitSeconds <= 0 && appUsage.usedSeconds > 0 -> 1f
-        effectiveLimitSeconds <= 0 -> 0f
-        else -> (appUsage.usedSeconds.toFloat() / effectiveLimitSeconds).coerceIn(0f, 1f)
-    }
-
-    Text(
-        text = "${formatAllowance(appUsage.usedSeconds)} / " +
-            formatAllowance(effectiveLimitSeconds),
-        style = MaterialTheme.typography.bodyMedium,
-    )
-    Text(
-        text = "基础额度：${formatAllowance(checkNotNull(appUsage.baseLimitSeconds))}",
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    if (appUsage.extensionSeconds > 0) {
-        Text(
-            text = "今日已延长：${formatAllowance(appUsage.extensionSeconds)}",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-    Text(
-        text = "剩余时间：${formatAllowance(remainingSeconds)}",
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    LinearProgressIndicator(
-        progress = { usageProgress },
-        modifier = Modifier.fillMaxWidth(),
-        strokeCap = StrokeCap.Round,
-        gapSize = 0.dp,
-        drawStopIndicator = {},
-    )
 }
 
 @Composable
-private fun AppIcon(
-    appIcon: ImageBitmap?,
-    appName: String,
+private fun PermissionWarning(onOpenPermissionSettings: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = TimeManagerSpacing.medium),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+        ),
+    ) {
+        Row(
+            modifier = Modifier.padding(TimeManagerSpacing.medium),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("缺少必要权限", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    text = "部分统计、提醒或冷静页功能可能无法运行。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+            }
+            OutlinedButton(onClick = onOpenPermissionSettings) { Text("重新授权") }
+        }
+    }
+}
+
+@Composable
+private fun ManagedAppUsageItem(
+    appUsage: AppUsageWithLimit,
+    onClick: () -> Unit,
 ) {
-    if (appIcon != null) {
-        Image(
-            bitmap = appIcon,
-            contentDescription = "$appName 图标",
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .size(48.dp)
-                .clip(RoundedCornerShape(12.dp)),
-        )
-    } else {
-        Text(
-            text = appName.firstOrNull()?.toString() ?: "?",
-            modifier = Modifier.size(48.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.headlineMedium,
-        )
+    val effectiveLimitSeconds = checkNotNull(appUsage.effectiveLimitSeconds)
+    val progress = when {
+        effectiveLimitSeconds <= 0L && appUsage.usedSeconds > 0L -> 1f
+        effectiveLimitSeconds <= 0L -> 0f
+        else -> appUsage.usedSeconds.toFloat() / effectiveLimitSeconds.toFloat()
+    }
+    val differenceSeconds = effectiveLimitSeconds - appUsage.usedSeconds
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = TimeManagerSpacing.medium),
+        verticalAlignment = Alignment.Top,
+    ) {
+        AppIcon(bitmap = appUsage.appIcon, appName = appUsage.appName)
+        Spacer(Modifier.size(TimeManagerSpacing.medium))
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.small),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = appUsage.appName,
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = formatCompactDuration(appUsage.usedSeconds),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            UsageProgressIndicator(
+                progress = progress,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row {
+                Text(
+                    text = if (differenceSeconds >= 0L) {
+                        "剩余 ${formatCompactDuration(differenceSeconds)}"
+                    } else {
+                        "已超出 ${formatCompactDuration(-differenceSeconds)}"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (differenceSeconds >= 0L) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = "/ ${formatCompactDuration(effectiveLimitSeconds)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     }
 }
 
@@ -382,36 +340,26 @@ private fun ErrorContent(
     message: String,
     modifier: Modifier = Modifier,
 ) {
-    Column(
-        modifier = modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Text("读取使用时间失败")
-        Text(message)
-    }
+    FullScreenError(
+        title = "读取使用时间失败",
+        message = message,
+        modifier = modifier,
+    )
 }
 
-private data class UsageSummary(
-    val totalUsageMinutes: Long,
-    val mostUsedApp: AppUsageWithLimit?,
-)
-
-private fun formatUsageDuration(totalMinutes: Long): String {
-    val hours = totalMinutes / 60
-    val minutes = totalMinutes % 60
-
-    return if (hours > 0) "$hours 小时 $minutes 分钟" else "$minutes 分钟"
-}
-
-private fun formatAllowance(totalSeconds: Long): String = when {
-    totalSeconds < 60L -> "$totalSeconds 秒"
-    totalSeconds % 60L == 0L -> "${totalSeconds / 60L} 分钟"
-    else -> "${totalSeconds / 60L}分${totalSeconds % 60L}秒"
-}
-
-private fun formatSecondsDuration(seconds: Long): String {
+private fun formatDashboardDuration(seconds: Long): String {
     val hours = seconds / 3_600L
     val minutes = (seconds % 3_600L) / 60L
-    return if (hours > 0L) "$hours 小时 $minutes 分钟" else "$minutes 分钟"
+    return if (hours > 0L) "${hours}h ${minutes}min" else "${minutes} min"
+}
+
+private fun formatCompactDuration(seconds: Long): String {
+    val safeSeconds = seconds.coerceAtLeast(0L)
+    val hours = safeSeconds / 3_600L
+    val minutes = (safeSeconds % 3_600L) / 60L
+    return when {
+        hours > 0L -> "${hours}h ${minutes}min"
+        minutes > 0L -> "${minutes} min"
+        else -> "${safeSeconds} sec"
+    }
 }

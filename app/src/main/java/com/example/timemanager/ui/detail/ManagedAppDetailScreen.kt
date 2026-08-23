@@ -1,9 +1,9 @@
 package com.example.timemanager.ui.detail
 
-import android.graphics.Bitmap
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -13,14 +13,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -28,21 +27,22 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.timemanager.R
+import com.example.timemanager.ui.components.AppIcon
+import com.example.timemanager.ui.components.FullScreenError
+import com.example.timemanager.ui.components.FullScreenLoading
+import com.example.timemanager.ui.components.UsageProgressIndicator
 import com.example.timemanager.ui.limit.LimitEditorDialog
+import com.example.timemanager.ui.theme.TimeManagerSpacing
 
 @Composable
 fun ManagedAppDetailScreen(
@@ -52,27 +52,20 @@ fun ManagedAppDetailScreen(
     onOpenHistory: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val state by viewModel.uiState.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
     BackHandler(onBack = onBack)
 
     when (val current = state) {
-        ManagedAppDetailUiState.Loading -> Column(
-            modifier = modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) { CircularProgressIndicator() }
+        ManagedAppDetailUiState.Loading -> FullScreenLoading(modifier)
 
         ManagedAppDetailUiState.Removed -> LaunchedEffect(Unit) { onRemoved() }
 
-        is ManagedAppDetailUiState.Error -> Column(
-            modifier = modifier.fillMaxSize().padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Text(current.message)
-            Button(onClick = viewModel::refresh) { Text("重试") }
-            TextButton(onClick = onBack) { Text("返回") }
-        }
+        is ManagedAppDetailUiState.Error -> ErrorContent(
+            message = current.message,
+            onRetry = viewModel::refresh,
+            onBack = onBack,
+            modifier = modifier,
+        )
 
         is ManagedAppDetailUiState.Ready -> {
             DetailContent(
@@ -116,76 +109,90 @@ private fun DetailContent(
     modifier: Modifier,
 ) {
     var confirmRemoval by remember { mutableStateOf(false) }
+
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        contentPadding = PaddingValues(
+            start = TimeManagerSpacing.medium,
+            top = TimeManagerSpacing.small,
+            end = TimeManagerSpacing.medium,
+            bottom = TimeManagerSpacing.extraLarge,
+        ),
     ) {
-        item(key = "header") {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onBack) { Text("← 返回") }
-                Text("应用详情", style = MaterialTheme.typography.headlineSmall)
-            }
+        item("topBar") {
+            DetailTopBar(onBack = onBack)
         }
-        item(key = "identity") {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                DetailIcon(state.appIcon, state.appName)
-                Spacer(Modifier.size(16.dp))
-                Column {
-                    Text(state.appName, style = MaterialTheme.typography.headlineSmall)
-                    Text(
-                        state.packageName,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    if (!state.isInstalled) {
-                        Text("应用可能已卸载", color = MaterialTheme.colorScheme.error)
-                    }
-                }
-            }
+        item("identity") {
+            AppIdentity(state)
         }
-        item(key = "usage") { UsageCard(state) }
-        item(key = "management_title") {
-            Text("使用管理", style = MaterialTheme.typography.titleLarge)
+        item("usage") {
+            TodayUsageSection(state)
         }
-        item(key = "management") {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                ),
-            ) {
-                Column(Modifier.padding(horizontal = 16.dp)) {
-                    SettingRow(
-                        "每日使用额度",
-                        state.baseLimitSeconds?.let(::formatDuration) ?: "未设置",
-                        onClick = onEditLimit,
-                    )
-                    HorizontalDivider()
-                    SettingRow(
-                        "连续使用提醒",
-                        "${state.sessionReminderMinutes} 分钟",
-                        onClick = onEditSessionReminder,
-                    )
-                    HorizontalDivider()
-                    SettingRow("超额冷静页", "已开启")
-                    HorizontalDivider()
-                    SettingRow("今日临时延长", formatSignedDuration(state.extensionSeconds))
-                    HorizontalDivider()
-                    SettingRow("使用历史", "查看", onClick = onOpenHistory)
-                }
-            }
+        item("settingsTitle") {
+            SectionTitle("使用设置")
+        }
+        item("dailyLimit") {
+            DetailSettingRow(
+                label = "每日使用额度",
+                value = state.baseLimitSeconds?.let(::formatDuration) ?: "未设置",
+                onClick = onEditLimit,
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        }
+        item("sessionReminder") {
+            DetailSettingRow(
+                label = "连续使用提醒",
+                value = "${state.sessionReminderMinutes} 分钟",
+                onClick = onEditSessionReminder,
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        }
+        item("intervention") {
+            DetailSettingRow(label = "超额冷静提醒", value = "已开启")
+        }
+        item("todayTitle") {
+            SectionTitle("今天")
+        }
+        item("extension") {
+            DetailSettingRow(
+                label = "临时延长",
+                value = formatSignedDuration(state.extensionSeconds),
+            )
+        }
+        item("trendTitle") {
+            SectionTitle("使用趋势")
+        }
+        item("history") {
+            DetailSettingRow(
+                label = "过去7天与30天",
+                value = "查看历史",
+                onClick = onOpenHistory,
+            )
         }
         state.errorMessage?.let { message ->
-            item(key = "error") { Text(message, color = MaterialTheme.colorScheme.error) }
+            item("error") {
+                Text(
+                    text = message,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = TimeManagerSpacing.medium),
+                )
+            }
         }
-        item(key = "remove") {
-            OutlinedButton(
+        item("remove") {
+            TextButton(
                 onClick = { confirmRemoval = true },
                 enabled = !state.isRemoving,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.padding(top = TimeManagerSpacing.large),
             ) {
-                Text(if (state.isRemoving) "移除中" else "从管理列表移除")
+                Text(
+                    text = if (state.isRemoving) "移除中" else "从管理列表移除",
+                    color = if (state.isRemoving) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    },
+                )
             }
         }
     }
@@ -198,16 +205,171 @@ private fun DetailContent(
                 Text("移除${state.appName}后，TimeManager 将停止对它进行实时计时、额度提醒和超额干预。")
             },
             confirmButton = {
-                Button(
+                TextButton(
                     onClick = {
                         confirmRemoval = false
                         onRemove()
                     },
-                ) { Text("确认移除") }
+                ) {
+                    Text("确认移除", color = MaterialTheme.colorScheme.error)
+                }
             },
             dismissButton = {
                 TextButton(onClick = { confirmRemoval = false }) { Text("取消") }
             },
+        )
+    }
+}
+
+@Composable
+private fun DetailTopBar(onBack: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = TimeManagerSpacing.small),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onBack) {
+            Icon(
+                painter = painterResource(R.drawable.ic_arrow_back),
+                contentDescription = "返回",
+            )
+        }
+        Text("应用详情", style = MaterialTheme.typography.titleLarge)
+    }
+}
+
+@Composable
+private fun AppIdentity(state: ManagedAppDetailUiState.Ready) {
+    Row(
+        modifier = Modifier.padding(top = TimeManagerSpacing.large),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AppIcon(
+            bitmap = state.appIcon,
+            appName = state.appName,
+            size = TimeManagerSpacing.extraLarge + TimeManagerSpacing.extraLarge,
+        )
+        Spacer(Modifier.size(TimeManagerSpacing.medium))
+        Column(verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.extraSmall)) {
+            Text(state.appName, style = MaterialTheme.typography.headlineSmall)
+            Text(
+                state.packageName,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (!state.isInstalled) {
+                Text(
+                    "应用可能已卸载",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TodayUsageSection(state: ManagedAppDetailUiState.Ready) {
+    val effective = state.effectiveLimitSeconds
+    val progress = when {
+        effective == null -> 0f
+        effective <= 0L && state.todayUsageSeconds > 0L -> 1f
+        effective <= 0L -> 0f
+        else -> state.todayUsageSeconds.toFloat() / effective.toFloat()
+    }
+
+    Column(
+        modifier = Modifier.padding(top = TimeManagerSpacing.extraLarge),
+        verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.small),
+    ) {
+        Text(
+            text = "今日使用",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = formatDuration(state.todayUsageSeconds),
+            style = MaterialTheme.typography.displaySmall,
+        )
+        if (effective != null) {
+            Text(
+                text = "${formatDuration(state.todayUsageSeconds)} / ${formatDuration(effective)}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            UsageProgressIndicator(
+                progress = progress,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Text(
+                text = if (state.isOverLimit) {
+                    "已超出 ${formatDuration(state.exceededSeconds)}"
+                } else {
+                    "剩余 ${formatDuration(state.remainingSeconds)}"
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (state.isOverLimit) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(TimeManagerSpacing.large)) {
+                UsageMetric("基础额度", state.baseLimitSeconds?.let(::formatDuration) ?: "未设置")
+                UsageMetric("今日延长", formatSignedDuration(state.extensionSeconds))
+                UsageMetric("有效额度", formatDuration(effective))
+            }
+        }
+    }
+}
+
+@Composable
+private fun UsageMetric(label: String, value: String) {
+    Column(modifier = Modifier.padding(top = TimeManagerSpacing.small)) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(text = value, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable
+private fun SectionTitle(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier.padding(
+            top = TimeManagerSpacing.extraLarge,
+            bottom = TimeManagerSpacing.small,
+        ),
+    )
+}
+
+@Composable
+private fun DetailSettingRow(
+    label: String,
+    value: String,
+    onClick: (() -> Unit)? = null,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(vertical = TimeManagerSpacing.medium),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = if (onClick == null) value else "$value  ›",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -224,11 +386,11 @@ private fun SessionReminderEditorDialog(
         onDismissRequest = onDismiss,
         title = { Text("连续使用提醒") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.compact)) {
                 Text("选择提醒时间，或输入5到180分钟。")
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(TimeManagerSpacing.small),
                 ) {
                     listOf(15, 20, 30).forEach { minutes ->
                         OutlinedButton(
@@ -240,7 +402,7 @@ private fun SessionReminderEditorDialog(
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(TimeManagerSpacing.small),
                 ) {
                     listOf(45, 60).forEach { minutes ->
                         OutlinedButton(
@@ -275,82 +437,19 @@ private fun SessionReminderEditorDialog(
 }
 
 @Composable
-private fun UsageCard(state: ManagedAppDetailUiState.Ready) {
-    val effective = state.effectiveLimitSeconds
-    val progress = when {
-        effective == null -> 0f
-        effective <= 0L && state.todayUsageSeconds > 0L -> 1f
-        effective <= 0L -> 0f
-        else -> (state.todayUsageSeconds.toFloat() / effective).coerceIn(0f, 1f)
-    }
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
-        ),
-    ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text("今日使用", style = MaterialTheme.typography.titleMedium)
-            Text(
-                if (effective == null) {
-                    formatDuration(state.todayUsageSeconds)
-                } else {
-                    "${formatDuration(state.todayUsageSeconds)} / ${formatDuration(effective)}"
-                },
-                style = MaterialTheme.typography.headlineSmall,
-            )
-            if (effective != null) {
-                LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier.fillMaxWidth(),
-                    strokeCap = StrokeCap.Round,
-                    gapSize = 0.dp,
-                    drawStopIndicator = {},
-                )
-                Text(
-                    if (state.isOverLimit) {
-                        "已超出 ${formatDuration(state.exceededSeconds)}"
-                    } else {
-                        "剩余 ${formatDuration(state.remainingSeconds)}"
-                    },
-                )
-                Text("基础额度：${state.baseLimitSeconds?.let(::formatDuration) ?: "未设置"}")
-                Text("今日延长：${formatSignedDuration(state.extensionSeconds)}")
-                Text("当前有效额度：${formatDuration(effective)}")
-            }
-        }
-    }
-}
-
-@Composable
-private fun SettingRow(label: String, value: String, onClick: (() -> Unit)? = null) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label, modifier = Modifier.weight(1f))
-        TextButton(onClick = { onClick?.invoke() }, enabled = onClick != null) {
-            Text(if (onClick == null) value else "$value  >")
-        }
-    }
-}
-
-@Composable
-private fun DetailIcon(bitmap: Bitmap?, appName: String) {
-    val icon = remember(bitmap) { bitmap?.asImageBitmap() }
-    if (icon == null) {
-        Text(appName.firstOrNull()?.toString() ?: "?", style = MaterialTheme.typography.headlineLarge)
-    } else {
-        Image(
-            bitmap = icon,
-            contentDescription = "$appName 图标",
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.size(64.dp).clip(RoundedCornerShape(16.dp)),
-        )
-    }
+private fun ErrorContent(
+    message: String,
+    onRetry: () -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier,
+) {
+    FullScreenError(
+        title = "无法加载应用详情",
+        message = message,
+        onRetry = onRetry,
+        onBack = onBack,
+        modifier = modifier,
+    )
 }
 
 private fun formatDuration(seconds: Long): String = when {

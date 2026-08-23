@@ -43,10 +43,13 @@ class ManagedAppDetailViewModel(
 
     fun open(packageName: String) {
         require(packageName.isNotBlank())
+        val currentState = _uiState.value
+        val hasMatchingContent = currentState is ManagedAppDetailUiState.Ready &&
+            currentState.packageName == packageName
         this.packageName = packageName
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
-            _uiState.value = ManagedAppDetailUiState.Loading
+            if (!hasMatchingContent) _uiState.value = ManagedAppDetailUiState.Loading
             combine(
                 trackedAppRepository.observeTrackedPackageNames(),
                 limitRepository.observeLimit(packageName),
@@ -65,9 +68,11 @@ class ManagedAppDetailViewModel(
                             buildState(packageName, limit, result.sessionReminderMinutes)
                         }
                     }.getOrElse { error ->
-                        ManagedAppDetailUiState.Error(
-                            error.message ?: "无法加载应用详情",
-                        )
+                        if (hasMatchingContent) _uiState.value else {
+                            ManagedAppDetailUiState.Error(
+                                error.message ?: "无法加载应用详情",
+                            )
+                        }
                     }
                 }
         }

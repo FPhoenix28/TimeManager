@@ -1,6 +1,7 @@
 package com.example.timemanager.ui.limit
 
 import android.util.Log
+import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -32,13 +33,17 @@ class LimitViewModel(
     private var loadJob: Job? = null
     private var installedAppsByPackage: Map<String, InstalledApp> = emptyMap()
 
-    init { loadApps() }
+    fun loadIfNeeded() {
+        if (_uiState.value == LimitUiState.Loading && loadJob?.isActive != true) loadApps()
+    }
 
     fun loadApps() {
+        val hasContent = _uiState.value is LimitUiState.Success
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
-            _uiState.value = LimitUiState.Loading
-            _uiState.value = runCatching {
+            val startedAt = SystemClock.elapsedRealtime()
+            if (!hasContent) _uiState.value = LimitUiState.Loading
+            val result = runCatching {
                 withContext(Dispatchers.IO) {
                     val installedApps = installedAppRepository.getUserInstalledApps()
                     installedAppsByPackage = installedApps.associateBy(InstalledApp::packageName)
@@ -68,8 +73,17 @@ class LimitViewModel(
                             .toList(),
                     )
                 }
-            }.getOrElse { error ->
-                LimitUiState.Error(error.message ?: "无法加载应用管理数据")
+            }
+            result.onSuccess {
+                _uiState.value = it
+                Log.d(TAG_PERFORMANCE, "Total=${SystemClock.elapsedRealtime() - startedAt}ms apps=${it.apps.size}")
+            }
+            result.onFailure { error ->
+                if (!hasContent) {
+                    _uiState.value = LimitUiState.Error(
+                        error.message ?: "无法加载应用管理数据",
+                    )
+                }
             }
         }
     }
@@ -223,6 +237,7 @@ class LimitViewModel(
 
     private companion object {
         const val TAG = "LimitUI"
+        const val TAG_PERFORMANCE = "ManagementLoad"
         const val MAX_LIMIT_INPUT_LENGTH = 4
         const val MILLIS_PER_SECOND = 1_000L
     }

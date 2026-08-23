@@ -24,30 +24,35 @@ class AppSelectionViewModel(
     val uiState: StateFlow<AppSelectionUiState> = _uiState.asStateFlow()
     private var loadJob: Job? = null
 
-    init {
-        loadApps()
+    fun loadIfNeeded() {
+        if (_uiState.value == AppSelectionUiState.Loading && loadJob?.isActive != true) loadApps()
     }
 
     fun loadApps() {
+        val hasContent = _uiState.value is AppSelectionUiState.Success
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
-            _uiState.value = AppSelectionUiState.Loading
+            if (!hasContent) _uiState.value = AppSelectionUiState.Loading
             val installedApps = runCatching {
                 withContext(Dispatchers.IO) {
                     installedAppRepository.getUserInstalledApps()
                 }
             }.getOrElse { error ->
-                _uiState.value = AppSelectionUiState.Error(
-                    error.message ?: "无法读取安装应用",
-                )
+                if (!hasContent) {
+                    _uiState.value = AppSelectionUiState.Error(
+                        error.message ?: "无法读取安装应用",
+                    )
+                }
                 return@launch
             }
 
             trackedAppRepository.observeTrackedPackageNames()
                 .catch { error ->
-                    _uiState.value = AppSelectionUiState.Error(
-                        error.message ?: "无法读取目标应用",
-                    )
+                    if (!hasContent) {
+                        _uiState.value = AppSelectionUiState.Error(
+                            error.message ?: "无法读取目标应用",
+                        )
+                    }
                 }
                 .collect { trackedPackages ->
                     _uiState.value = AppSelectionUiState.Success(

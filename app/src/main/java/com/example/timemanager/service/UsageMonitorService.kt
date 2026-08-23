@@ -249,14 +249,18 @@ class UsageMonitorService : Service() {
             timerState = timerState,
             configuredReminderSeconds = configuredReminderSeconds,
         )
-        Log.d(
-            SESSION_TRACKER_TAG,
-            "packageName=${foregroundApp.packageName} " +
-                "currentSessionSeconds=${timerState.currentSessionSeconds} " +
-                "configuredReminderSeconds=$configuredReminderSeconds " +
-                "hasShownReminder=${sessionTracker.hasShownSessionIntervention()} " +
-                "shouldTrigger=$sessionTriggered",
-        )
+        val diagnosticTick =
+            timerState.currentSessionSeconds % DIAGNOSTIC_LOG_INTERVAL_SECONDS == 0L
+        if (diagnosticTick || sessionTriggered || isNewSession) {
+            Log.d(
+                SESSION_TRACKER_TAG,
+                "packageName=${foregroundApp.packageName} " +
+                    "currentSessionSeconds=${timerState.currentSessionSeconds} " +
+                    "configuredReminderSeconds=$configuredReminderSeconds " +
+                    "hasShownReminder=${sessionTracker.hasShownSessionIntervention()} " +
+                    "shouldTrigger=$sessionTriggered",
+            )
+        }
         sessionTracker.update(timerState)?.let { reminder ->
             alertNotificationHelper.sendSessionReminder(
                 packageName = foregroundApp.packageName,
@@ -282,7 +286,12 @@ class UsageMonitorService : Service() {
                 limitSeconds = limit.effectiveLimitSeconds,
             )
         }
-        if (baseLimitMinutes != null && effectiveLimit != null && limitEvaluation != null) {
+        if (
+            baseLimitMinutes != null &&
+            effectiveLimit != null &&
+            limitEvaluation != null &&
+            (diagnosticTick || isNewSession)
+        ) {
             Log.d(
                 USAGE_LIMIT_EVALUATOR_TAG,
                 "packageName=${foregroundApp.packageName} " +
@@ -306,17 +315,19 @@ class UsageMonitorService : Service() {
             limitEvaluation = limitEvaluation,
         )
         if (limitEvaluation != null) {
-            Log.d(
-                TAG,
-                "packageName=${foregroundApp.packageName} managed=true " +
-                    "todayUsageSeconds=$todayUsageSeconds " +
-                    "baseLimitSeconds=${effectiveLimit?.baseLimitSeconds} " +
-                    "todayExtensionSeconds=${effectiveLimit?.todayExtensionSeconds} " +
-                    "effectiveLimitSeconds=${limitEvaluation.limitSeconds} " +
-                    "isOverLimit=${limitEvaluation.isLimitReached} " +
-                    "foregroundServiceRunning=true " +
-                    "foregroundNotificationUpdated=$foregroundNotificationUpdated",
-            )
+            if (diagnosticTick || isNewSession) {
+                Log.d(
+                    TAG,
+                    "packageName=${foregroundApp.packageName} managed=true " +
+                        "todayUsageSeconds=$todayUsageSeconds " +
+                        "baseLimitSeconds=${effectiveLimit?.baseLimitSeconds} " +
+                        "todayExtensionSeconds=${effectiveLimit?.todayExtensionSeconds} " +
+                        "effectiveLimitSeconds=${limitEvaluation.limitSeconds} " +
+                        "isOverLimit=${limitEvaluation.isLimitReached} " +
+                        "foregroundServiceRunning=true " +
+                        "foregroundNotificationUpdated=$foregroundNotificationUpdated",
+                )
+            }
             val decision = interventionManager.evaluate(
                 appName = foregroundApp.appName,
                 evaluation = limitEvaluation,
@@ -343,17 +354,19 @@ class UsageMonitorService : Service() {
                 InterventionType.SESSION_REMINDER
             else -> null
         }
-        Log.d(
-            INTERVENTION_TAG,
-            "InterventionType=$selectedIntervention " +
-                "packageName=${foregroundApp.packageName} " +
-                "sessionSeconds=${timerState.currentSessionSeconds} " +
-                "todayUsageSeconds=$todayUsageSeconds " +
-                "dailyLimitSeconds=${limitEvaluation?.limitSeconds} " +
-                "sessionTriggered=$sessionTriggered " +
-                "dailyLimitTriggered=$dailyLimitTriggered " +
-                "selectedIntervention=$selectedIntervention",
-        )
+        if (diagnosticTick || selectedIntervention != null || isNewSession) {
+            Log.d(
+                INTERVENTION_TAG,
+                "InterventionType=$selectedIntervention " +
+                    "packageName=${foregroundApp.packageName} " +
+                    "sessionSeconds=${timerState.currentSessionSeconds} " +
+                    "todayUsageSeconds=$todayUsageSeconds " +
+                    "dailyLimitSeconds=${limitEvaluation?.limitSeconds} " +
+                    "sessionTriggered=$sessionTriggered " +
+                    "dailyLimitTriggered=$dailyLimitTriggered " +
+                    "selectedIntervention=$selectedIntervention",
+            )
+        }
         if (selectedIntervention == InterventionType.SESSION_REMINDER) {
             showSessionIntervention(
                 LimitInterventionRequest.sessionReminder(
@@ -595,6 +608,7 @@ class UsageMonitorService : Service() {
         const val SESSION_TRACKER_TAG = "SessionTracker"
         const val SECONDS_PER_MINUTE = 60L
         const val DETECTION_INTERVAL_MILLIS = 1_000L
+        const val DIAGNOSTIC_LOG_INTERVAL_SECONDS = 15L
         const val EVENT_OVERLAP_MILLIS = 500L
         const val INITIAL_LOOKBACK_MILLIS = 24 * 60 * 60 * 1_000L
         const val FOREGROUND_NOTIFICATION_TAG = "ForegroundNotification"

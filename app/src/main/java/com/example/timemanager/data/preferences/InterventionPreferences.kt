@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.timemanager.data.model.InterventionState
+import kotlinx.coroutines.flow.first
 
 private val Context.interventionDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "limit_interventions",
@@ -19,6 +20,13 @@ class InterventionPreferences(context: Context) {
     private val dataStore = context.applicationContext.interventionDataStore
 
     suspend fun getState(packageName: String, usageDayKey: String): InterventionState {
+        val current = dataStore.data.first()
+        if (
+            current[usageDayKey(packageName)] == usageDayKey &&
+            current[extensionSecondsKey(packageName)] != null
+        ) {
+            return current.toState(packageName, usageDayKey)
+        }
         val preferences = dataStore.edit { values ->
             resetForNewUsageDay(values, packageName, usageDayKey)
         }
