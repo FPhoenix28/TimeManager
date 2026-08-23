@@ -54,22 +54,25 @@ class HomeViewModel(
                     val usageDayKey = usageDayProvider.currentUsageDay().key
                     val usageWithLimits = appUsages.map { appUsage ->
                         val baseLimit = limitsByPackage[appUsage.packageName]?.limitMinutes
-                        val extensionMinutes = if (baseLimit == null) {
-                            0
+                        val extensionSeconds = if (baseLimit == null) {
+                            0L
                         } else {
                             interventionRepository.getState(
                                 appUsage.packageName,
                                 usageDayKey,
-                            ).todayExtensionMinutes
+                            ).todayExtensionSeconds
+                        }
+                        val baseLimitSeconds = baseLimit?.let { savedMinutes ->
+                            savedMinutes * SECONDS_PER_MINUTE
                         }
                         AppUsageWithLimit(
                             packageName = appUsage.packageName,
                             appName = appUsage.appName,
                             appIcon = appUsage.appIcon,
-                            usedMinutes = appUsage.usageTimeMillis / MILLIS_PER_MINUTE,
-                            baseLimitMinutes = baseLimit,
-                            extensionMinutes = extensionMinutes,
-                            effectiveLimitMinutes = baseLimit?.plus(extensionMinutes),
+                            usedSeconds = appUsage.usageTimeMillis / MILLIS_PER_SECOND,
+                            baseLimitSeconds = baseLimitSeconds,
+                            extensionSeconds = extensionSeconds,
+                            effectiveLimitSeconds = baseLimitSeconds?.plus(extensionSeconds),
                         )
                     }.sortedByDescending(AppUsageWithLimit::usedMinutes)
 
@@ -97,6 +100,7 @@ class HomeViewModel(
     }
 
     private companion object {
-        const val MILLIS_PER_MINUTE = 60_000L
+        const val MILLIS_PER_SECOND = 1_000L
+        const val SECONDS_PER_MINUTE = 60L
     }
 }

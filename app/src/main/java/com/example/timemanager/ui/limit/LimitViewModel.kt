@@ -1,5 +1,6 @@
 package com.example.timemanager.ui.limit
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -116,6 +117,10 @@ class LimitViewModel(
             updateEditor { it.copy(errorMessage = "请输入有效分钟数") }
             return
         }
+        Log.d(
+            TAG,
+            "userInput=$limitMinutes packageName=${editor.packageName}",
+        )
 
         updateEditor { it.copy(isSaving = true, errorMessage = null) }
         viewModelScope.launch {
@@ -214,6 +219,7 @@ class LimitViewModel(
     }
 
     private companion object {
+        const val TAG = "LimitUI"
         const val MAX_LIMIT_INPUT_LENGTH = 4
         const val MILLIS_PER_SECOND = 1_000L
     }

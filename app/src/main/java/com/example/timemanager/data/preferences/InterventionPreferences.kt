@@ -28,7 +28,7 @@ class InterventionPreferences(context: Context) {
     suspend fun grantExtension(
         packageName: String,
         usageDayKey: String,
-        extensionMinutes: Int,
+        extensionSeconds: Long,
         maxExtensions: Int,
     ): InterventionState? {
         var granted = false
@@ -38,8 +38,8 @@ class InterventionPreferences(context: Context) {
             val count = values[countKey] ?: 0
             if (count < maxExtensions) {
                 values[countKey] = count + 1
-                val extensionKey = extensionMinutesKey(packageName)
-                values[extensionKey] = (values[extensionKey] ?: 0) + extensionMinutes
+                val extensionKey = extensionSecondsKey(packageName)
+                values[extensionKey] = (values[extensionKey] ?: 0L) + extensionSeconds
                 values[graceEndKey(packageName)] = 0L
                 granted = true
             }
@@ -64,6 +64,7 @@ class InterventionPreferences(context: Context) {
             values.remove(graceEndKey(packageName))
             values.remove(extensionCountKey(packageName))
             values.remove(extensionMinutesKey(packageName))
+            values.remove(extensionSecondsKey(packageName))
         }
     }
 
@@ -78,10 +79,12 @@ class InterventionPreferences(context: Context) {
             values[graceEndKey(packageName)] = 0L
             values[extensionCountKey(packageName)] = 0
             values[extensionMinutesKey(packageName)] = 0
-        } else if (values[extensionMinutesKey(packageName)] == null) {
-            // Migrate extension counts written by the earlier wall-clock grace implementation.
-            values[extensionMinutesKey(packageName)] =
-                (values[extensionCountKey(packageName)] ?: 0) * LEGACY_EXTENSION_MINUTES
+            values[extensionSecondsKey(packageName)] = 0L
+        } else if (values[extensionSecondsKey(packageName)] == null) {
+            // Migrate extensions written before sub-minute debug durations were supported.
+            val storedMinutes = values[extensionMinutesKey(packageName)]
+                ?: (values[extensionCountKey(packageName)] ?: 0) * LEGACY_EXTENSION_MINUTES
+            values[extensionSecondsKey(packageName)] = storedMinutes * SECONDS_PER_MINUTE
         }
     }
 
@@ -93,7 +96,7 @@ class InterventionPreferences(context: Context) {
         usageDayKey = usageDayKey,
         gracePeriodEndTime = this[graceEndKey(packageName)] ?: 0L,
         extensionsUsed = this[extensionCountKey(packageName)] ?: 0,
-        todayExtensionMinutes = this[extensionMinutesKey(packageName)] ?: 0,
+        todayExtensionSeconds = this[extensionSecondsKey(packageName)] ?: 0L,
     )
 
     private fun usageDayKey(packageName: String) =
@@ -108,7 +111,11 @@ class InterventionPreferences(context: Context) {
     private fun extensionMinutesKey(packageName: String) =
         intPreferencesKey("extension_minutes:$packageName")
 
+    private fun extensionSecondsKey(packageName: String) =
+        longPreferencesKey("extension_seconds:$packageName")
+
     private companion object {
         const val LEGACY_EXTENSION_MINUTES = 5
+        const val SECONDS_PER_MINUTE = 60L
     }
 }

@@ -8,12 +8,20 @@ class UsageLimitEvaluator {
         packageName: String,
         todayUsageSeconds: Long,
         limitMinutes: Int,
+    ): UsageLimitEvaluation = evaluateSeconds(
+        packageName = packageName,
+        todayUsageSeconds = todayUsageSeconds,
+        limitSeconds = limitMinutes.toLong() * SECONDS_PER_MINUTE,
+    )
+
+    fun evaluateSeconds(
+        packageName: String,
+        todayUsageSeconds: Long,
+        limitSeconds: Long,
     ): UsageLimitEvaluation {
         require(packageName.isNotBlank()) { "packageName must not be blank." }
         require(todayUsageSeconds >= 0L) { "todayUsageSeconds must not be negative." }
-        require(limitMinutes >= 0) { "limitMinutes must not be negative." }
-
-        val limitSeconds = limitMinutes.toLong() * SECONDS_PER_MINUTE
+        require(limitSeconds >= 0L) { "limitSeconds must not be negative." }
         val hasUsage = todayUsageSeconds > 0L
         val rawProgress = when {
             limitSeconds == 0L && hasUsage -> 1.0

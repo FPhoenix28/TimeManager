@@ -1,6 +1,7 @@
 package com.example.timemanager.timer
 
 import android.os.SystemClock
+import android.util.Log
 import com.example.timemanager.data.model.ForegroundApp
 import com.example.timemanager.data.model.TimerState
 
@@ -18,9 +19,14 @@ class AppTimer(
 
         if (activeApp == null) {
             startSession(foregroundApp, now)
+            Log.d(TAG, "session started packageName=${foregroundApp.packageName}")
         } else if (activeApp.packageName != foregroundApp.packageName) {
             saveCurrentSession(now)
             startSession(foregroundApp, now)
+            Log.d(
+                TAG,
+                "session switched from=${activeApp.packageName} to=${foregroundApp.packageName}",
+            )
         } else {
             currentApp = foregroundApp
         }
@@ -30,7 +36,9 @@ class AppTimer(
 
     fun finishCurrentSession(): TimerState? {
         if (currentApp == null) return null
-        return saveCurrentSession(elapsedRealtime())
+        return saveCurrentSession(elapsedRealtime()).also { state ->
+            Log.d(TAG, "session finished packageName=${state.packageName} seconds=${state.currentSessionSeconds}")
+        }
     }
 
     fun getCompletedSessions(): List<TimerState> = completedSessions.toList()
@@ -61,5 +69,6 @@ class AppTimer(
 
     private companion object {
         const val MILLIS_PER_SECOND = 1_000L
+        const val TAG = "AppTimer"
     }
 }

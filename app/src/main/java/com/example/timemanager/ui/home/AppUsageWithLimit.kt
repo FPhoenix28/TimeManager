@@ -9,8 +9,10 @@ data class AppUsageWithLimit(
     val packageName: String,
     val appName: String,
     val appIcon: Bitmap?,
-    val usedMinutes: Long,
-    val baseLimitMinutes: Int?,
-    val extensionMinutes: Int,
-    val effectiveLimitMinutes: Int?,
-)
+    val usedSeconds: Long,
+    val baseLimitSeconds: Long?,
+    val extensionSeconds: Long,
+    val effectiveLimitSeconds: Long?,
+) {
+    val usedMinutes: Long get() = usedSeconds / 60L
+}

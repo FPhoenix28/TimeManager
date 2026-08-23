@@ -34,6 +34,7 @@ class ForegroundAppDetector(context: Context) {
             }
 
             latestPackageName?.let { packageName ->
+                Log.d(TAG, "foreground event packageName=$packageName")
                 ForegroundApp(
                     packageName = packageName,
                     appName = resolveAppName(packageName),

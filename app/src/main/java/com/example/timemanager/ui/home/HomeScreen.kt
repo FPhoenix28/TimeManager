@@ -38,8 +38,8 @@ import android.graphics.Bitmap
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
-    hasOverlayPermission: Boolean,
-    onRequestOverlayPermission: () -> Unit,
+    hasRequiredPermissions: Boolean,
+    onOpenPermissionSettings: () -> Unit,
     onOpenManagement: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -49,8 +49,8 @@ fun HomeScreen(
         HomeUiState.Loading -> LoadingContent(modifier)
         is HomeUiState.Success -> UsageList(
             appUsages = state.appUsages,
-            hasOverlayPermission = hasOverlayPermission,
-            onRequestOverlayPermission = onRequestOverlayPermission,
+            hasRequiredPermissions = hasRequiredPermissions,
+            onOpenPermissionSettings = onOpenPermissionSettings,
             onOpenManagement = onOpenManagement,
             modifier = modifier,
         )
@@ -75,8 +75,8 @@ private fun LoadingContent(modifier: Modifier = Modifier) {
 @Composable
 private fun UsageList(
     appUsages: List<AppUsageWithLimit>,
-    hasOverlayPermission: Boolean,
-    onRequestOverlayPermission: () -> Unit,
+    hasRequiredPermissions: Boolean,
+    onOpenPermissionSettings: () -> Unit,
     onOpenManagement: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -122,7 +122,16 @@ private fun UsageList(
             }
         }
 
-        if (!hasOverlayPermission) {
+        item {
+            OutlinedButton(
+                onClick = onOpenPermissionSettings,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("权限与系统设置")
+            }
+        }
+
+        if (!hasRequiredPermissions) {
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -136,18 +145,18 @@ private fun UsageList(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Text(
-                            text = "冷静页权限尚未开启",
+                            text = "TimeManager 缺少必要权限",
                             style = MaterialTheme.typography.titleMedium,
                         )
                         Text(
-                            text = "开启后，受管理应用超出每日额度时会显示冷静页。",
+                            text = "部分统计、提醒或冷静页功能可能无法运行。",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         OutlinedButton(
-                            onClick = onRequestOverlayPermission,
+                            onClick = onOpenPermissionSettings,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Text("开启冷静页权限")
+                            Text("重新授权")
                         }
                     }
                 }
@@ -243,42 +252,43 @@ private fun UsageCard(appUsage: AppUsageWithLimit) {
 
 @Composable
 private fun UsageLimitContent(appUsage: AppUsageWithLimit) {
-    val effectiveLimitMinutes = appUsage.effectiveLimitMinutes
-    if (effectiveLimitMinutes == null) {
+    val effectiveLimitSeconds = appUsage.effectiveLimitSeconds
+    if (effectiveLimitSeconds == null) {
         Text(
-            text = "今日使用：${appUsage.usedMinutes} 分钟",
+            text = "今日使用：${formatAllowance(appUsage.usedSeconds)}",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         return
     }
 
-    val remainingMinutes = (effectiveLimitMinutes.toLong() - appUsage.usedMinutes)
+    val remainingSeconds = (effectiveLimitSeconds - appUsage.usedSeconds)
         .coerceAtLeast(0L)
     val usageProgress = when {
-        effectiveLimitMinutes <= 0 && appUsage.usedMinutes > 0 -> 1f
-        effectiveLimitMinutes <= 0 -> 0f
-        else -> (appUsage.usedMinutes.toFloat() / effectiveLimitMinutes).coerceIn(0f, 1f)
+        effectiveLimitSeconds <= 0 && appUsage.usedSeconds > 0 -> 1f
+        effectiveLimitSeconds <= 0 -> 0f
+        else -> (appUsage.usedSeconds.toFloat() / effectiveLimitSeconds).coerceIn(0f, 1f)
     }
 
     Text(
-        text = "${appUsage.usedMinutes} / $effectiveLimitMinutes 分钟",
+        text = "${formatAllowance(appUsage.usedSeconds)} / " +
+            formatAllowance(effectiveLimitSeconds),
         style = MaterialTheme.typography.bodyMedium,
     )
     Text(
-        text = "基础额度：${appUsage.baseLimitMinutes} 分钟",
+        text = "基础额度：${formatAllowance(checkNotNull(appUsage.baseLimitSeconds))}",
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
-    if (appUsage.extensionMinutes > 0) {
+    if (appUsage.extensionSeconds > 0) {
         Text(
-            text = "今日已延长：${appUsage.extensionMinutes} 分钟",
+            text = "今日已延长：${formatAllowance(appUsage.extensionSeconds)}",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
     Text(
-        text = "剩余时间：$remainingMinutes 分钟",
+        text = "剩余时间：${formatAllowance(remainingSeconds)}",
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -340,4 +350,10 @@ private fun formatUsageDuration(totalMinutes: Long): String {
     val minutes = totalMinutes % 60
 
     return if (hours > 0) "$hours 小时 $minutes 分钟" else "$minutes 分钟"
+}
+
+private fun formatAllowance(totalSeconds: Long): String = when {
+    totalSeconds < 60L -> "$totalSeconds 秒"
+    totalSeconds % 60L == 0L -> "${totalSeconds / 60L} 分钟"
+    else -> "${totalSeconds / 60L}分${totalSeconds % 60L}秒"
 }

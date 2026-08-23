@@ -31,6 +31,7 @@ class InterventionOverlayControllerTest {
                     exceededSeconds = 300L,
                     currentSessionSeconds = 900L,
                     extensionsRemaining = 2,
+                    extensionDurationSeconds = 300L,
                 ),
                 onExit = {},
                 onContinue = {},

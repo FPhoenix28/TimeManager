@@ -14,9 +14,14 @@ import androidx.core.content.ContextCompat
 import com.example.timemanager.MainActivity
 import com.example.timemanager.R
 import com.example.timemanager.data.model.SessionReminder
+import com.example.timemanager.config.BuildTimeConfig
+import com.example.timemanager.config.TimeConfig
 
 /** Creates the usage-alert channel and posts usage limit notifications. */
-class NotificationHelper(context: Context) {
+class NotificationHelper(
+    context: Context,
+    private val timeConfig: TimeConfig = BuildTimeConfig.value,
+) {
     private val context = context.applicationContext
 
     fun createNotificationChannel() {
@@ -56,10 +61,16 @@ class NotificationHelper(context: Context) {
         reminder: SessionReminder,
     ): Boolean {
         val message = when (reminder) {
-            SessionReminder.FIFTEEN_MINUTES ->
+            SessionReminder.FIFTEEN_MINUTES -> if (timeConfig.debugTimeOverridesEnabled) {
+                "测试提醒：你已经连续使用$appName ${timeConfig.firstSessionReminderSeconds} 秒"
+            } else {
                 "你已经连续使用$appName 15 分钟"
-            SessionReminder.THIRTY_MINUTES ->
+            }
+            SessionReminder.THIRTY_MINUTES -> if (timeConfig.debugTimeOverridesEnabled) {
+                "测试提醒：你已经连续使用$appName ${timeConfig.secondSessionReminderSeconds} 秒"
+            } else {
                 "你已经连续使用$appName 30 分钟，建议暂时离开一下"
+            }
         }
         return sendNotification(
             notificationId = NotificationIds.sessionReminder(packageName, reminder),

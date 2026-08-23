@@ -12,12 +12,12 @@ class InterventionRepository(
     suspend fun grantExtension(
         packageName: String,
         usageDayKey: String,
-        extensionMinutes: Int,
+        extensionSeconds: Long,
         maxExtensions: Int,
     ): InterventionState? = preferences.grantExtension(
         packageName,
         usageDayKey,
-        extensionMinutes,
+        extensionSeconds,
         maxExtensions,
     )
 

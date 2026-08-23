@@ -21,6 +21,8 @@ class InterventionOverlayController(context: Context) {
     private var hostOwner: OverlayComposeHostOwner? = null
     private var isOverlayShowing = false
 
+    fun isShowing(): Boolean = isOverlayShowing
+
     suspend fun show(
         request: LimitInterventionRequest,
         onExit: () -> Unit,

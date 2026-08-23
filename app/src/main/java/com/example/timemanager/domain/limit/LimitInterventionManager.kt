@@ -7,12 +7,15 @@ import com.example.timemanager.data.model.LimitInterventionDecision
 import com.example.timemanager.data.model.LimitInterventionRequest
 import com.example.timemanager.data.model.UsageLimitEvaluation
 import com.example.timemanager.data.repository.InterventionRepository
+import com.example.timemanager.config.BuildTimeConfig
+import com.example.timemanager.config.TimeConfig
 import com.example.timemanager.utils.UsageDayProvider
 
 /** Owns soft-limit display, effective daily allowance, and extension decisions. */
 class LimitInterventionManager(
     private val repository: InterventionRepository,
     private val usageDayProvider: UsageDayProvider,
+    private val timeConfig: TimeConfig = BuildTimeConfig.value,
     private val currentTimeMillis: () -> Long = System::currentTimeMillis,
 ) {
     private val stateCache = mutableMapOf<String, InterventionState>()
@@ -31,17 +34,18 @@ class LimitInterventionManager(
     ): EffectiveAppLimit {
         val usageDayKey = usageDayProvider.currentUsageDay().key
         val state = getState(packageName, usageDayKey)
+        val baseLimitSeconds = baseDailyLimitMinutes * SECONDS_PER_MINUTE
         return EffectiveAppLimit(
             packageName = packageName,
-            baseDailyLimitMinutes = baseDailyLimitMinutes,
-            todayExtensionMinutes = state.todayExtensionMinutes,
+            baseLimitSeconds = baseLimitSeconds,
+            todayExtensionSeconds = state.todayExtensionSeconds,
         )
     }
 
     suspend fun evaluate(
         appName: String,
         evaluation: UsageLimitEvaluation,
-        baseDailyLimitMinutes: Int,
+        baseLimitSeconds: Long,
         currentSessionSeconds: Long,
         isNewSession: Boolean,
     ): LimitInterventionDecision {
@@ -69,8 +73,8 @@ class LimitInterventionManager(
             TAG,
             "packageName=$packageName " +
                 "todayUsageSeconds=${evaluation.usedSeconds} " +
-                "baseLimitSeconds=${baseDailyLimitMinutes * SECONDS_PER_MINUTE} " +
-                "extensionSeconds=${state.todayExtensionMinutes * SECONDS_PER_MINUTE} " +
+                "baseLimitSeconds=$baseLimitSeconds " +
+                "extensionSeconds=${state.todayExtensionSeconds} " +
                 "effectiveLimitSeconds=${evaluation.limitSeconds} " +
                 "previousOverLimit=${triggerSnapshot.previousOverLimit} " +
                 "currentOverLimit=${triggerSnapshot.currentOverLimit} " +
@@ -98,28 +102,30 @@ class LimitInterventionManager(
         Log.d(TAG, "interventionTriggered=true packageName=$packageName")
         return LimitInterventionDecision.Show(
             LimitInterventionRequest(
+                type = com.example.timemanager.data.model.InterventionType.DAILY_LIMIT_REACHED,
                 packageName = packageName,
                 appName = appName,
                 todayUsageSeconds = evaluation.usedSeconds,
-                baseLimitSeconds = baseDailyLimitMinutes * SECONDS_PER_MINUTE,
-                extensionSeconds = state.todayExtensionMinutes * SECONDS_PER_MINUTE,
+                baseLimitSeconds = baseLimitSeconds,
+                extensionSeconds = state.todayExtensionSeconds,
                 effectiveLimitSeconds = evaluation.limitSeconds,
                 exceededSeconds = (evaluation.usedSeconds - evaluation.limitSeconds)
                     .coerceAtLeast(0L),
                 currentSessionSeconds = currentSessionSeconds,
                 extensionsRemaining = (MAX_DAILY_EXTENSIONS - state.extensionsUsed)
                     .coerceAtLeast(0),
+                extensionDurationSeconds = timeConfig.extensionDurationSeconds,
             ),
         )
     }
 
-    suspend fun grantFiveMinuteExtension(packageName: String): Boolean {
+    suspend fun grantConfiguredExtension(packageName: String): Boolean {
         if (visiblePackageName != packageName) return false
         val usageDayKey = usageDayProvider.currentUsageDay().key
         val state = repository.grantExtension(
             packageName = packageName,
             usageDayKey = usageDayKey,
-            extensionMinutes = EXTENSION_MINUTES,
+            extensionSeconds = timeConfig.extensionDurationSeconds,
             maxExtensions = MAX_DAILY_EXTENSIONS,
         ) ?: return false
         stateCache[packageName] = state
@@ -129,7 +135,7 @@ class LimitInterventionManager(
         Log.d(
             TAG,
             "limitExtended packageName=$packageName " +
-                "todayExtensionMinutes=${state.todayExtensionMinutes}",
+                "todayExtensionSeconds=${state.todayExtensionSeconds}",
         )
         return true
     }
@@ -173,7 +179,6 @@ class LimitInterventionManager(
 
     companion object {
         const val MAX_DAILY_EXTENSIONS = 2
-        const val EXTENSION_MINUTES = 5
         private const val SECONDS_PER_MINUTE = 60L
         private const val DISPLAY_RETRY_DELAY_MILLIS = 5_000L
         private const val TAG = "LimitIntervention"

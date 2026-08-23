@@ -29,4 +29,24 @@ class UsageLimitEvaluatorTest {
         assertEquals(0L, result.remainingSeconds)
         assertEquals(1f, result.progress)
     }
+
+    @Test
+    fun secondBasedLimitUsesTheSameEvaluationLogic() {
+        val before = evaluator.evaluateSeconds("example.app", 59L, 60L)
+        val reached = evaluator.evaluateSeconds("example.app", 60L, 60L)
+
+        assertFalse(before.isLimitReached)
+        assertTrue(reached.isLimitReached)
+        assertEquals(60L, reached.limitSeconds)
+    }
+
+    @Test
+    fun savedThirtyMinuteLimitUsesEighteenHundredSeconds() {
+        val before = evaluator.evaluate("example.app", 1_799L, 30)
+        val reached = evaluator.evaluate("example.app", 1_800L, 30)
+
+        assertFalse(before.isLimitReached)
+        assertTrue(reached.isLimitReached)
+        assertEquals(1_800L, reached.limitSeconds)
+    }
 }
