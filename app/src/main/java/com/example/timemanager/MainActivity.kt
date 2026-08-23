@@ -25,21 +25,30 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import com.example.timemanager.data.preferences.AppLimitPreferences
+import com.example.timemanager.data.local.AppDatabase
 import com.example.timemanager.data.preferences.RealtimeUsagePreferences
 import com.example.timemanager.data.preferences.InterventionPreferences
 import com.example.timemanager.data.preferences.OnboardingPreferences
+import com.example.timemanager.data.preferences.NotificationStatePreferences
+import com.example.timemanager.data.preferences.SessionSettingsPreferences
 import com.example.timemanager.data.preferences.TrackedAppPreferences
 import com.example.timemanager.data.repository.InstalledAppInfoProvider
 import com.example.timemanager.data.repository.InstalledAppRepository
 import com.example.timemanager.data.repository.LimitRepository
+import com.example.timemanager.data.repository.ManagedAppRepository
+import com.example.timemanager.data.repository.NotificationStateRepository
+import com.example.timemanager.data.repository.SessionSettingsRepository
 import com.example.timemanager.data.repository.InterventionRepository
 import com.example.timemanager.data.repository.TrackedAppRepository
 import com.example.timemanager.data.repository.UsageStatsReader
 import com.example.timemanager.data.repository.UsageRepository
 import com.example.timemanager.data.repository.UsageTimeRepository
+import com.example.timemanager.data.repository.UsageHistoryRepository
 import com.example.timemanager.ui.theme.TimeManagerTheme
 import com.example.timemanager.ui.home.HomeScreen
 import com.example.timemanager.ui.home.HomeViewModel
+import com.example.timemanager.ui.detail.ManagedAppDetailScreen
+import com.example.timemanager.ui.detail.ManagedAppDetailViewModel
 import com.example.timemanager.ui.limit.LimitScreen
 import com.example.timemanager.ui.limit.LimitViewModel
 import com.example.timemanager.ui.onboarding.OnboardingScreen
@@ -47,6 +56,10 @@ import com.example.timemanager.ui.permissions.PermissionSettingsScreen
 import com.example.timemanager.ui.permissions.PermissionUiState
 import com.example.timemanager.ui.selection.AppSelectionScreen
 import com.example.timemanager.ui.selection.AppSelectionViewModel
+import com.example.timemanager.ui.statistics.StatisticsScreen
+import com.example.timemanager.ui.statistics.StatisticsViewModel
+import com.example.timemanager.ui.statistics.AppHistoryScreen
+import com.example.timemanager.ui.statistics.AppHistoryViewModel
 import com.example.timemanager.utils.UsagePermissionManager
 import com.example.timemanager.utils.OverlayPermissionManager
 import com.example.timemanager.notifications.NotificationHelper
@@ -65,6 +78,11 @@ class MainActivity : ComponentActivity() {
     private lateinit var homeViewModel: HomeViewModel
     private lateinit var limitViewModel: LimitViewModel
     private lateinit var appSelectionViewModel: AppSelectionViewModel
+    private lateinit var managedAppDetailViewModel: ManagedAppDetailViewModel
+    private lateinit var statisticsViewModel: StatisticsViewModel
+    private lateinit var appHistoryViewModel: AppHistoryViewModel
+    private var detailPackageName: String? = null
+    private var appHistoryBackDestination = AppDestination.HOME
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { isGranted ->
@@ -91,9 +109,26 @@ class MainActivity : ComponentActivity() {
         val trackedAppRepository = TrackedAppRepository(
             TrackedAppPreferences(applicationContext),
         )
+        val notificationStateRepository = NotificationStateRepository(
+            NotificationStatePreferences(applicationContext),
+        )
+        val sessionSettingsRepository = SessionSettingsRepository(
+            SessionSettingsPreferences(applicationContext),
+        )
+        val managedAppRepository = ManagedAppRepository(
+            trackedAppRepository = trackedAppRepository,
+            limitRepository = limitRepository,
+            interventionRepository = interventionRepository,
+            notificationStateRepository = notificationStateRepository,
+            sessionSettingsRepository = sessionSettingsRepository,
+        )
+        val usageHistoryRepository = UsageHistoryRepository(
+            AppDatabase.getInstance(applicationContext).usageHistoryDao(),
+        )
         val usageTimeRepository = UsageTimeRepository(
             usageRepository = UsageRepository(UsageStatsReader(applicationContext)),
             preferences = RealtimeUsagePreferences(applicationContext),
+            historyRepository = usageHistoryRepository,
         )
         homeViewModel = ViewModelProvider(
             this,
@@ -101,6 +136,8 @@ class MainActivity : ComponentActivity() {
                 usageTimeRepository = usageTimeRepository,
                 limitRepository = limitRepository,
                 interventionRepository = interventionRepository,
+                usageHistoryRepository = usageHistoryRepository,
+                trackedAppRepository = trackedAppRepository,
             ),
         )[HomeViewModel::class.java]
         limitViewModel = ViewModelProvider(
@@ -110,6 +147,7 @@ class MainActivity : ComponentActivity() {
                 trackedAppRepository = trackedAppRepository,
                 limitRepository = limitRepository,
                 usageTimeRepository = usageTimeRepository,
+                managedAppRepository = managedAppRepository,
             ),
         )[LimitViewModel::class.java]
         appSelectionViewModel = ViewModelProvider(
@@ -119,6 +157,35 @@ class MainActivity : ComponentActivity() {
                 trackedAppRepository = trackedAppRepository,
             ),
         )[AppSelectionViewModel::class.java]
+        managedAppDetailViewModel = ViewModelProvider(
+            this,
+            ManagedAppDetailViewModel.Factory(
+                installedAppRepository = installedAppRepository,
+                usageTimeRepository = usageTimeRepository,
+                limitRepository = limitRepository,
+                trackedAppRepository = trackedAppRepository,
+                interventionRepository = interventionRepository,
+                managedAppRepository = managedAppRepository,
+                sessionSettingsRepository = sessionSettingsRepository,
+            ),
+        )[ManagedAppDetailViewModel::class.java]
+        statisticsViewModel = ViewModelProvider(
+            this,
+            StatisticsViewModel.Factory(
+                historyRepository = usageHistoryRepository,
+                usageTimeRepository = usageTimeRepository,
+                trackedAppRepository = trackedAppRepository,
+                installedAppRepository = installedAppRepository,
+            ),
+        )[StatisticsViewModel::class.java]
+        appHistoryViewModel = ViewModelProvider(
+            this,
+            AppHistoryViewModel.Factory(
+                historyRepository = usageHistoryRepository,
+                usageTimeRepository = usageTimeRepository,
+                installedAppRepository = installedAppRepository,
+            ),
+        )[AppHistoryViewModel::class.java]
         lifecycleScope.launch {
             val completed = onboardingPreferences.observeCompleted().first()
             onboardingCompleted = completed
@@ -164,6 +231,15 @@ class MainActivity : ComponentActivity() {
                                     limitViewModel.loadApps()
                                     destination = AppDestination.LIMITS
                                 },
+                                onOpenAppDetail = { packageName ->
+                                    detailPackageName = packageName
+                                    managedAppDetailViewModel.open(packageName)
+                                    destination = AppDestination.MANAGED_APP_DETAIL
+                                },
+                                onOpenStatistics = {
+                                    statisticsViewModel.refresh()
+                                    destination = AppDestination.STATISTICS
+                                },
                                 modifier = Modifier.padding(innerPadding),
                             )
                             AppDestination.LIMITS -> LimitScreen(
@@ -192,6 +268,39 @@ class MainActivity : ComponentActivity() {
                                 onRequestOverlay = ::openOverlaySettings,
                                 modifier = Modifier.padding(innerPadding),
                             )
+                            AppDestination.MANAGED_APP_DETAIL -> ManagedAppDetailScreen(
+                                viewModel = managedAppDetailViewModel,
+                                onBack = {
+                                    destination = AppDestination.HOME
+                                    homeViewModel.loadTodayUsage()
+                                },
+                                onRemoved = {
+                                    detailPackageName = null
+                                    destination = AppDestination.HOME
+                                    homeViewModel.loadTodayUsage()
+                                },
+                                onOpenHistory = { packageName ->
+                                    appHistoryBackDestination = AppDestination.MANAGED_APP_DETAIL
+                                    appHistoryViewModel.open(packageName)
+                                    destination = AppDestination.APP_HISTORY
+                                },
+                                modifier = Modifier.padding(innerPadding),
+                            )
+                            AppDestination.STATISTICS -> StatisticsScreen(
+                                viewModel = statisticsViewModel,
+                                onBack = { destination = AppDestination.HOME },
+                                onOpenAppHistory = { packageName ->
+                                    appHistoryBackDestination = AppDestination.STATISTICS
+                                    appHistoryViewModel.open(packageName)
+                                    destination = AppDestination.APP_HISTORY
+                                },
+                                modifier = Modifier.padding(innerPadding),
+                            )
+                            AppDestination.APP_HISTORY -> AppHistoryScreen(
+                                viewModel = appHistoryViewModel,
+                                onBack = { destination = appHistoryBackDestination },
+                                modifier = Modifier.padding(innerPadding),
+                            )
                         }
                         }
                     }
@@ -206,6 +315,11 @@ class MainActivity : ComponentActivity() {
         if (onboardingCompleted == true && hasUsageAccess) {
             startUsageMonitorService()
             homeViewModel.loadTodayUsage()
+            if (destination == AppDestination.MANAGED_APP_DETAIL) {
+                managedAppDetailViewModel.refresh()
+            }
+            if (destination == AppDestination.STATISTICS) statisticsViewModel.refresh()
+            if (destination == AppDestination.APP_HISTORY) appHistoryViewModel.refresh()
         }
     }
 
@@ -271,4 +385,7 @@ private enum class AppDestination {
     LIMITS,
     APP_SELECTION,
     PERMISSIONS,
+    MANAGED_APP_DETAIL,
+    STATISTICS,
+    APP_HISTORY,
 }

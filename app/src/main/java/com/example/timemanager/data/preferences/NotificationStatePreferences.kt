@@ -37,6 +37,14 @@ class NotificationStatePreferences(context: Context) {
         }
     }
 
+    suspend fun remove(packageName: String) {
+        dataStore.edit { preferences ->
+            SUPPORTED_THRESHOLDS.forEach { threshold ->
+                preferences.remove(notificationKey(packageName, threshold))
+            }
+        }
+    }
+
     private val safePreferences: Flow<Preferences>
         get() = dataStore.data.catch { error ->
             if (error is IOException) {

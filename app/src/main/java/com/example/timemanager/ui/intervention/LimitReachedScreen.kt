@@ -55,7 +55,8 @@ private fun SessionReminderContent(
         Text("休息一下？", style = MaterialTheme.typography.headlineMedium)
         Text(request.appName, style = MaterialTheme.typography.titleLarge)
         Text(
-            text = "你已经连续使用${request.appName} 30分钟",
+            text = "你已经连续使用${request.appName} " +
+                formatShortDuration(request.configuredSessionReminderSeconds),
             textAlign = TextAlign.Center,
         )
         Text(

@@ -8,6 +8,7 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
 import com.example.timemanager.data.model.ForegroundApp
+import com.example.timemanager.data.local.AppDatabase
 import com.example.timemanager.config.BuildTimeConfig
 import com.example.timemanager.config.TimeConfig
 import com.example.timemanager.data.preferences.AppLimitPreferences
@@ -15,6 +16,7 @@ import com.example.timemanager.data.preferences.InterventionPreferences
 import com.example.timemanager.data.preferences.NotificationStatePreferences
 import com.example.timemanager.data.preferences.RealtimeUsagePreferences
 import com.example.timemanager.data.preferences.TrackedAppPreferences
+import com.example.timemanager.data.preferences.SessionSettingsPreferences
 import com.example.timemanager.data.repository.LimitRepository
 import com.example.timemanager.data.repository.InterventionRepository
 import com.example.timemanager.data.repository.NotificationStateRepository
@@ -22,6 +24,8 @@ import com.example.timemanager.data.repository.TrackedAppRepository
 import com.example.timemanager.data.repository.UsageRepository
 import com.example.timemanager.data.repository.UsageStatsReader
 import com.example.timemanager.data.repository.UsageTimeRepository
+import com.example.timemanager.data.repository.SessionSettingsRepository
+import com.example.timemanager.data.repository.UsageHistoryRepository
 import com.example.timemanager.domain.limit.UsageLimitEvaluator
 import com.example.timemanager.domain.limit.LimitInterventionManager
 import com.example.timemanager.data.model.LimitInterventionDecision
@@ -65,15 +69,18 @@ class UsageMonitorService : Service() {
     private lateinit var usageDayProvider: UsageDayProvider
     private lateinit var sessionTracker: SessionTracker
     private lateinit var alertNotificationHelper: NotificationHelper
+    private lateinit var sessionSettingsRepository: SessionSettingsRepository
     private lateinit var powerManager: PowerManager
     private lateinit var timeConfig: TimeConfig
     private var detectionJob: Job? = null
     private var trackedAppsJob: Job? = null
     private var limitsJob: Job? = null
+    private var sessionSettingsJob: Job? = null
     private var currentForegroundApp: ForegroundApp? = null
     private var timedForegroundApp: ForegroundApp? = null
     private var trackedPackageNames: Set<String> = emptySet()
     private var limitMinutesByPackage: Map<String, Int> = emptyMap()
+    private var sessionReminderMinutesByPackage: Map<String, Int> = emptyMap()
     private var activeInterventionType: InterventionType? = null
     private var activeInterventionPackageName: String? = null
     private var lastIdleUsageDayKey: String? = null
@@ -96,12 +103,18 @@ class UsageMonitorService : Service() {
         usageTimeRepository = UsageTimeRepository(
             usageRepository = UsageRepository(UsageStatsReader(applicationContext)),
             preferences = RealtimeUsagePreferences(applicationContext),
+            historyRepository = UsageHistoryRepository(
+                AppDatabase.getInstance(applicationContext).usageHistoryDao(),
+            ),
             usageDayProvider = usageDayProvider,
         )
         trackedAppRepository = TrackedAppRepository(
             TrackedAppPreferences(applicationContext),
         )
         limitRepository = LimitRepository(AppLimitPreferences(applicationContext))
+        sessionSettingsRepository = SessionSettingsRepository(
+            SessionSettingsPreferences(applicationContext),
+        )
         val notificationStateRepository = NotificationStateRepository(
             NotificationStatePreferences(applicationContext),
         )
@@ -125,6 +138,7 @@ class UsageMonitorService : Service() {
         Log.d(TAG, "timeConfig=$timeConfig")
         observeTrackedApps()
         observeLimits()
+        observeSessionSettings()
         startDetection()
         Log.d(TAG, "Usage monitor service started.")
     }
@@ -138,6 +152,7 @@ class UsageMonitorService : Service() {
         detectionJob?.cancel()
         trackedAppsJob?.cancel()
         limitsJob?.cancel()
+        sessionSettingsJob?.cancel()
         val finalTimerState = appTimer.finishCurrentSession()
         sessionTracker.endSession()
         runBlocking(Dispatchers.IO) {
@@ -226,7 +241,22 @@ class UsageMonitorService : Service() {
             interventionManager.onManagedAppEntered(foregroundApp.packageName)
         }
         val timerState = appTimer.update(foregroundApp)
-        val session30Triggered = sessionTracker.consumeThirtyMinuteIntervention(timerState)
+        val configuredReminderSeconds = (
+            sessionReminderMinutesByPackage[foregroundApp.packageName]
+                ?: SessionSettingsRepository.DEFAULT_REMINDER_MINUTES
+            ) * SECONDS_PER_MINUTE
+        val sessionTriggered = sessionTracker.consumeSessionIntervention(
+            timerState = timerState,
+            configuredReminderSeconds = configuredReminderSeconds,
+        )
+        Log.d(
+            SESSION_TRACKER_TAG,
+            "packageName=${foregroundApp.packageName} " +
+                "currentSessionSeconds=${timerState.currentSessionSeconds} " +
+                "configuredReminderSeconds=$configuredReminderSeconds " +
+                "hasShownReminder=${sessionTracker.hasShownSessionIntervention()} " +
+                "shouldTrigger=$sessionTriggered",
+        )
         sessionTracker.update(timerState)?.let { reminder ->
             alertNotificationHelper.sendSessionReminder(
                 packageName = foregroundApp.packageName,
@@ -309,7 +339,7 @@ class UsageMonitorService : Service() {
         }
         val selectedIntervention = when {
             dailyLimitTriggered -> InterventionType.DAILY_LIMIT_REACHED
-            session30Triggered && !interventionOverlayController.isShowing() ->
+            sessionTriggered && !interventionOverlayController.isShowing() ->
                 InterventionType.SESSION_REMINDER
             else -> null
         }
@@ -320,7 +350,7 @@ class UsageMonitorService : Service() {
                 "sessionSeconds=${timerState.currentSessionSeconds} " +
                 "todayUsageSeconds=$todayUsageSeconds " +
                 "dailyLimitSeconds=${limitEvaluation?.limitSeconds} " +
-                "session30Triggered=$session30Triggered " +
+                "sessionTriggered=$sessionTriggered " +
                 "dailyLimitTriggered=$dailyLimitTriggered " +
                 "selectedIntervention=$selectedIntervention",
         )
@@ -331,6 +361,7 @@ class UsageMonitorService : Service() {
                     appName = foregroundApp.appName,
                     todayUsageSeconds = todayUsageSeconds,
                     currentSessionSeconds = timerState.currentSessionSeconds,
+                    configuredReminderSeconds = configuredReminderSeconds,
                 ),
             )
         }
@@ -351,6 +382,16 @@ class UsageMonitorService : Service() {
                             "limitMinutes=${limit.limitMinutes}",
                     )
                 }
+            }
+        }
+    }
+
+    private fun observeSessionSettings() {
+        if (sessionSettingsJob?.isActive == true) return
+        sessionSettingsJob = serviceScope.launch {
+            sessionSettingsRepository.observeStoredSettings().collect { settings ->
+                sessionReminderMinutesByPackage = settings
+                Log.d(SESSION_TRACKER_TAG, "session settings updated count=${settings.size}")
             }
         }
     }
@@ -551,6 +592,8 @@ class UsageMonitorService : Service() {
     private companion object {
         const val TAG = "UsageMonitorService"
         const val INTERVENTION_TAG = "InterventionType"
+        const val SESSION_TRACKER_TAG = "SessionTracker"
+        const val SECONDS_PER_MINUTE = 60L
         const val DETECTION_INTERVAL_MILLIS = 1_000L
         const val EVENT_OVERLAP_MILLIS = 500L
         const val INITIAL_LOOKBACK_MILLIS = 24 * 60 * 60 * 1_000L

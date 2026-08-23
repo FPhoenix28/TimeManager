@@ -50,26 +50,33 @@ class SessionTrackerTest {
 
     @Test
     fun thirtyMinuteInterventionIsConsumedOncePerSession() {
-        assertFalse(tracker.consumeThirtyMinuteIntervention(state("app.one", 1_799L)))
-        assertTrue(tracker.consumeThirtyMinuteIntervention(state("app.one", 1_800L)))
-        assertFalse(tracker.consumeThirtyMinuteIntervention(state("app.one", 1_801L)))
+        assertFalse(tracker.consumeSessionIntervention(state("app.one", 1_799L), 1_800L))
+        assertTrue(tracker.consumeSessionIntervention(state("app.one", 1_800L), 1_800L))
+        assertFalse(tracker.consumeSessionIntervention(state("app.one", 1_801L), 1_800L))
     }
 
     @Test
     fun endingSessionAllowsThirtyMinuteInterventionAgain() {
-        assertTrue(tracker.consumeThirtyMinuteIntervention(state("app.one", 1_800L)))
+        assertTrue(tracker.consumeSessionIntervention(state("app.one", 1_800L), 1_800L))
 
         tracker.endSession()
 
-        assertTrue(tracker.consumeThirtyMinuteIntervention(state("app.one", 1_800L)))
+        assertTrue(tracker.consumeSessionIntervention(state("app.one", 1_800L), 1_800L))
     }
 
     @Test
     fun reminderUpdatesDoNotResetInterventionWithinTheSameSession() {
-        assertTrue(tracker.consumeThirtyMinuteIntervention(state("app.one", 1_800L)))
+        assertTrue(tracker.consumeSessionIntervention(state("app.one", 1_800L), 1_800L))
         tracker.update(state("app.one", 1_801L))
 
-        assertFalse(tracker.consumeThirtyMinuteIntervention(state("app.one", 2_400L)))
+        assertFalse(tracker.consumeSessionIntervention(state("app.one", 2_400L), 1_200L))
+    }
+
+    @Test
+    fun loweringThresholdTriggersOnNextUpdateWithoutRepeating() {
+        assertFalse(tracker.consumeSessionIntervention(state("app.one", 1_500L), 1_800L))
+        assertTrue(tracker.consumeSessionIntervention(state("app.one", 1_501L), 1_200L))
+        assertFalse(tracker.consumeSessionIntervention(state("app.one", 1_502L), 1_200L))
     }
 
     private fun state(packageName: String, seconds: Long) = TimerState(

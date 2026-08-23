@@ -8,6 +8,7 @@ import com.example.timemanager.data.model.AppLimit
 import com.example.timemanager.data.model.InstalledApp
 import com.example.timemanager.data.repository.InstalledAppRepository
 import com.example.timemanager.data.repository.LimitRepository
+import com.example.timemanager.data.repository.ManagedAppRepository
 import com.example.timemanager.data.repository.TrackedAppRepository
 import com.example.timemanager.data.repository.UsageTimeRepository
 import kotlinx.coroutines.Dispatchers
@@ -24,6 +25,7 @@ class LimitViewModel(
     private val trackedAppRepository: TrackedAppRepository,
     private val limitRepository: LimitRepository,
     private val usageTimeRepository: UsageTimeRepository,
+    private val managedAppRepository: ManagedAppRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<LimitUiState>(LimitUiState.Loading)
     val uiState: StateFlow<LimitUiState> = _uiState.asStateFlow()
@@ -153,8 +155,7 @@ class LimitViewModel(
         viewModelScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    trackedAppRepository.setTracked(packageName, false)
-                    limitRepository.removeLimit(packageName)
+                    managedAppRepository.remove(packageName)
                 }
             }.fold(
                 onSuccess = { loadApps() },
@@ -203,6 +204,7 @@ class LimitViewModel(
         private val trackedAppRepository: TrackedAppRepository,
         private val limitRepository: LimitRepository,
         private val usageTimeRepository: UsageTimeRepository,
+        private val managedAppRepository: ManagedAppRepository,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -212,6 +214,7 @@ class LimitViewModel(
                     trackedAppRepository,
                     limitRepository,
                     usageTimeRepository,
+                    managedAppRepository,
                 ) as T
             }
             throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")

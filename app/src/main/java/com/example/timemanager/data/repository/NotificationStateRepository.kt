@@ -22,4 +22,6 @@ class NotificationStateRepository(
     ) {
         preferences.setLastSentDate(packageName, thresholdPercent, today)
     }
+
+    suspend fun remove(packageName: String) = preferences.remove(packageName)
 }

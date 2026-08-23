@@ -6,6 +6,9 @@ import com.example.timemanager.data.model.InstalledApp
 class InstalledAppRepository(
     private val installedAppInfoProvider: InstalledAppInfoProvider,
 ) {
+    fun getUserInstalledApp(packageName: String): InstalledApp? =
+        installedAppInfoProvider.getUserInstalledApp(packageName)
+
     fun getUserInstalledApps(): List<InstalledApp> =
         installedAppInfoProvider.getUserInstalledApps()
 }

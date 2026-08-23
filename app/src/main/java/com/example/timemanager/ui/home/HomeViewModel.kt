@@ -7,6 +7,9 @@ import com.example.timemanager.data.model.AppLimit
 import com.example.timemanager.data.repository.LimitRepository
 import com.example.timemanager.data.repository.InterventionRepository
 import com.example.timemanager.data.repository.UsageTimeRepository
+import com.example.timemanager.data.repository.UsageHistoryRepository
+import com.example.timemanager.data.repository.TrackedAppRepository
+import com.example.timemanager.domain.statistics.StatisticsCalculator
 import com.example.timemanager.utils.UsageDayProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -15,6 +18,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.combine
+import java.time.LocalDate
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -22,7 +27,10 @@ class HomeViewModel(
     private val usageTimeRepository: UsageTimeRepository,
     private val limitRepository: LimitRepository,
     private val interventionRepository: InterventionRepository,
+    private val usageHistoryRepository: UsageHistoryRepository,
+    private val trackedAppRepository: TrackedAppRepository,
     private val usageDayProvider: UsageDayProvider = UsageDayProvider(),
+    private val statisticsCalculator: StatisticsCalculator = StatisticsCalculator(),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<HomeUiState>(HomeUiState.Loading)
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -43,13 +51,22 @@ class HomeViewModel(
                 return@launch
             }
 
-            limitRepository.observeAllLimits()
+            val currentEndDate = LocalDate.parse(usageDayProvider.currentUsageDay().key)
+            val previousStartDate = currentEndDate.minusDays(13L)
+            combine(
+                limitRepository.observeAllLimits(),
+                trackedAppRepository.observeTrackedPackageNames(),
+                usageHistoryRepository.observeHistoryBetween(
+                    previousStartDate.toString(),
+                    currentEndDate.toString(),
+                ),
+            ) { limits, tracked, records -> Triple(limits, tracked, records) }
                 .catch { error ->
                     _uiState.value = HomeUiState.Error(
                         error.message ?: "无法读取应用额度",
                     )
                 }
-                .collect { appLimits ->
+                .collect { (appLimits, trackedPackages, historyRecords) ->
                     val limitsByPackage = appLimits.associateBy(AppLimit::packageName)
                     val usageDayKey = usageDayProvider.currentUsageDay().key
                     val usageWithLimits = appUsages.map { appUsage ->
@@ -76,7 +93,19 @@ class HomeViewModel(
                         )
                     }.sortedByDescending(AppUsageWithLimit::usedMinutes)
 
-                    _uiState.value = HomeUiState.Success(usageWithLimits)
+                    val weeklyAnalysis = statisticsCalculator.calculateManagedApps(
+                        records = historyRecords,
+                        managedPackages = trackedPackages,
+                        currentEndDate = currentEndDate,
+                        days = 7L,
+                    )
+                    _uiState.value = HomeUiState.Success(
+                        appUsages = usageWithLimits,
+                        weeklyTrend = WeeklyTrendSummary(
+                            totalSeconds = weeklyAnalysis.totalUsageSeconds,
+                            changePercent = weeklyAnalysis.changePercent,
+                        ),
+                    )
                 }
         }
     }
@@ -85,6 +114,8 @@ class HomeViewModel(
         private val usageTimeRepository: UsageTimeRepository,
         private val limitRepository: LimitRepository,
         private val interventionRepository: InterventionRepository,
+        private val usageHistoryRepository: UsageHistoryRepository,
+        private val trackedAppRepository: TrackedAppRepository,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -93,6 +124,8 @@ class HomeViewModel(
                     usageTimeRepository,
                     limitRepository,
                     interventionRepository,
+                    usageHistoryRepository,
+                    trackedAppRepository,
                 ) as T
             }
             throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")

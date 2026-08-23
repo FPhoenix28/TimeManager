@@ -178,7 +178,7 @@ private fun ManagedAppCard(
 }
 
 @Composable
-private fun LimitEditorDialog(
+fun LimitEditorDialog(
     editor: LimitEditorUiState,
     onInputChange: (String) -> Unit,
     onDismiss: () -> Unit,

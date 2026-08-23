@@ -11,6 +11,7 @@ import kotlin.math.max
 class UsageTimeRepository(
     private val usageRepository: UsageRepository,
     private val preferences: RealtimeUsagePreferences,
+    private val historyRepository: UsageHistoryRepository,
     private val usageDayProvider: UsageDayProvider = UsageDayProvider(),
 ) {
     private var runtimeDate: String? = null
@@ -56,7 +57,9 @@ class UsageTimeRepository(
         return max(
             historicalUsageSeconds(packageName, usageDay.startTimeMillis),
             realtimeSeconds,
-        )
+        ).also { usageSeconds ->
+            historyRepository.saveSnapshot(packageName, usageDay.key, usageSeconds)
+        }
     }
 
     /** Returns the home-screen list with unified usage values. */
@@ -73,6 +76,15 @@ class UsageTimeRepository(
                 )
             }
             .sortedByDescending(AppUsage::usageTimeMillis)
+            .also { usages ->
+                usages.forEach { usage ->
+                    historyRepository.saveSnapshot(
+                        usage.packageName,
+                        usageDay.key,
+                        usage.usageTimeMillis / MILLIS_PER_SECOND,
+                    )
+                }
+            }
     }
 
     suspend fun getTotalTodayUsageSeconds(packageNames: Set<String>): Long {
@@ -100,6 +112,8 @@ class UsageTimeRepository(
     private suspend fun ensureRuntimeDate(today: String) {
         if (runtimeDate == today) return
 
+        runtimeDate?.let { previousDate -> flushActiveRecord(previousDate) }
+
         val storedRecords = preferences.getRecordsForDate(today)
         runtimeDate = today
         activePackageName = null
@@ -126,6 +140,7 @@ class UsageTimeRepository(
                 seconds = seconds,
             ),
         )
+        historyRepository.saveSnapshot(packageName, date, seconds)
         persistedSecondsByPackage[packageName] = seconds
     }
 

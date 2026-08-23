@@ -34,6 +34,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import android.graphics.Bitmap
+import com.example.timemanager.ui.statistics.TrendComparisonText
 
 @Composable
 fun HomeScreen(
@@ -41,6 +42,8 @@ fun HomeScreen(
     hasRequiredPermissions: Boolean,
     onOpenPermissionSettings: () -> Unit,
     onOpenManagement: () -> Unit,
+    onOpenAppDetail: (String) -> Unit,
+    onOpenStatistics: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -49,9 +52,12 @@ fun HomeScreen(
         HomeUiState.Loading -> LoadingContent(modifier)
         is HomeUiState.Success -> UsageList(
             appUsages = state.appUsages,
+            weeklyTrend = state.weeklyTrend,
             hasRequiredPermissions = hasRequiredPermissions,
             onOpenPermissionSettings = onOpenPermissionSettings,
             onOpenManagement = onOpenManagement,
+            onOpenAppDetail = onOpenAppDetail,
+            onOpenStatistics = onOpenStatistics,
             modifier = modifier,
         )
         is HomeUiState.Error -> ErrorContent(
@@ -75,9 +81,12 @@ private fun LoadingContent(modifier: Modifier = Modifier) {
 @Composable
 private fun UsageList(
     appUsages: List<AppUsageWithLimit>,
+    weeklyTrend: WeeklyTrendSummary,
     hasRequiredPermissions: Boolean,
     onOpenPermissionSettings: () -> Unit,
     onOpenManagement: () -> Unit,
+    onOpenAppDetail: (String) -> Unit,
+    onOpenStatistics: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val usageSummary = remember(appUsages) {
@@ -114,11 +123,27 @@ private fun UsageList(
         }
 
         item {
+            WeeklyTrendCard(
+                trend = weeklyTrend,
+                onClick = onOpenStatistics,
+            )
+        }
+
+        item {
             Button(
                 onClick = onOpenManagement,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text("管理应用")
+            }
+        }
+
+        item {
+            OutlinedButton(
+                onClick = onOpenStatistics,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("使用统计")
             }
         }
 
@@ -172,8 +197,33 @@ private fun UsageList(
                 items = appUsages,
                 key = { appUsage -> appUsage.packageName },
             ) { appUsage ->
-                UsageCard(appUsage)
+                UsageCard(
+                    appUsage = appUsage,
+                    onClick = { onOpenAppDetail(appUsage.packageName) },
+                )
             }
+        }
+    }
+}
+
+@Composable
+private fun WeeklyTrendCard(trend: WeeklyTrendSummary, onClick: () -> Unit) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text("本周受管理应用使用", style = MaterialTheme.typography.titleMedium)
+            Text(
+                formatSecondsDuration(trend.totalSeconds),
+                style = MaterialTheme.typography.headlineSmall,
+            )
+            TrendComparisonText(trend.changePercent, "上周")
+            Text("查看统计 >", color = MaterialTheme.colorScheme.primary)
         }
     }
 }
@@ -218,12 +268,14 @@ private fun UsageSummaryCard(
 }
 
 @Composable
-private fun UsageCard(appUsage: AppUsageWithLimit) {
+private fun UsageCard(appUsage: AppUsageWithLimit, onClick: () -> Unit) {
     val appIcon = remember(appUsage.appIcon) {
         appUsage.appIcon?.asImageBitmap()
     }
 
     Card(
+        onClick = onClick,
+        enabled = appUsage.baseLimitSeconds != null,
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
@@ -356,4 +408,10 @@ private fun formatAllowance(totalSeconds: Long): String = when {
     totalSeconds < 60L -> "$totalSeconds 秒"
     totalSeconds % 60L == 0L -> "${totalSeconds / 60L} 分钟"
     else -> "${totalSeconds / 60L}分${totalSeconds % 60L}秒"
+}
+
+private fun formatSecondsDuration(seconds: Long): String {
+    val hours = seconds / 3_600L
+    val minutes = (seconds % 3_600L) / 60L
+    return if (hours > 0L) "$hours 小时 $minutes 分钟" else "$minutes 分钟"
 }

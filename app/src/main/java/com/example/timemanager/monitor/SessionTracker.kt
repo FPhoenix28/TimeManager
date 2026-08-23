@@ -10,7 +10,7 @@ class SessionTracker(
 ) {
     private var activePackageName: String? = null
     private val sentReminders = mutableSetOf<SessionReminder>()
-    private var hasShownThirtyMinuteIntervention = false
+    private var hasShownSessionIntervention = false
 
     fun update(timerState: TimerState): SessionReminder? {
         if (activePackageName != timerState.packageName) {
@@ -36,28 +36,34 @@ class SessionTracker(
     fun endSession() {
         activePackageName = null
         sentReminders.clear()
-        hasShownThirtyMinuteIntervention = false
+        hasShownSessionIntervention = false
     }
 
-    /** Consumes the one allowed 30-minute overlay trigger for this continuous session. */
-    fun consumeThirtyMinuteIntervention(timerState: TimerState): Boolean {
+    /** Consumes the one configured overlay trigger allowed for this continuous session. */
+    fun consumeSessionIntervention(
+        timerState: TimerState,
+        configuredReminderSeconds: Long,
+    ): Boolean {
+        require(configuredReminderSeconds > 0L)
         if (activePackageName != timerState.packageName) {
             startSession(timerState.packageName)
         }
         if (
-            timerState.currentSessionSeconds < secondReminderSeconds ||
-            hasShownThirtyMinuteIntervention
+            timerState.currentSessionSeconds < configuredReminderSeconds ||
+            hasShownSessionIntervention
         ) {
             return false
         }
-        hasShownThirtyMinuteIntervention = true
+        hasShownSessionIntervention = true
         return true
     }
+
+    fun hasShownSessionIntervention(): Boolean = hasShownSessionIntervention
 
     private fun startSession(packageName: String) {
         activePackageName = packageName
         sentReminders.clear()
-        hasShownThirtyMinuteIntervention = false
+        hasShownSessionIntervention = false
     }
 
 }
