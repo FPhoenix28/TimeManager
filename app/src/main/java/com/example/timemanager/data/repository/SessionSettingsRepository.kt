@@ -27,7 +27,7 @@ class SessionSettingsRepository(
     suspend fun remove(packageName: String) = preferences.remove(packageName)
 
     companion object {
-        const val DEFAULT_REMINDER_MINUTES = 30
+        const val DEFAULT_REMINDER_MINUTES = 10
         const val MIN_REMINDER_MINUTES = 5
         const val MAX_REMINDER_MINUTES = 180
     }

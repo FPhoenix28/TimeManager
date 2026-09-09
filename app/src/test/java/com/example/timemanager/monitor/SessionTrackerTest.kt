@@ -49,35 +49,101 @@ class SessionTrackerTest {
     }
 
     @Test
-    fun thirtyMinuteInterventionIsConsumedOncePerSession() {
-        assertFalse(tracker.consumeSessionIntervention(state("app.one", 1_799L), 1_800L))
-        assertTrue(tracker.consumeSessionIntervention(state("app.one", 1_800L), 1_800L))
-        assertFalse(tracker.consumeSessionIntervention(state("app.one", 1_801L), 1_800L))
+    fun defaultProgressiveInterventionsFollowTenEightEightThenFiveMinuteSchedule() {
+        assertFalse(evaluate(599L, 600L).isDue)
+
+        assertTrue(evaluate(600L, 600L).isDue)
+        assertEquals(1_080L, tracker.onSessionInterventionShown("app.one").nextReminderAtSeconds)
+        assertFalse(evaluate(1_079L, 600L).isDue)
+
+        assertTrue(evaluate(1_080L, 600L).isDue)
+        assertEquals(1_560L, tracker.onSessionInterventionShown("app.one").nextReminderAtSeconds)
+
+        assertTrue(evaluate(1_560L, 600L).isDue)
+        assertEquals(1_860L, tracker.onSessionInterventionShown("app.one").nextReminderAtSeconds)
+
+        assertTrue(evaluate(1_860L, 600L).isDue)
+        assertEquals(2_160L, tracker.onSessionInterventionShown("app.one").nextReminderAtSeconds)
+
+        assertTrue(evaluate(2_160L, 600L).isDue)
+        assertEquals(2_460L, tracker.onSessionInterventionShown("app.one").nextReminderAtSeconds)
     }
 
     @Test
-    fun endingSessionAllowsThirtyMinuteInterventionAgain() {
-        assertTrue(tracker.consumeSessionIntervention(state("app.one", 1_800L), 1_800L))
+    fun customTwentyMinuteFirstReminderUsesTheSameProgression() {
+        assertTrue(evaluate(1_200L, 1_200L).isDue)
+        assertEquals(1_680L, tracker.onSessionInterventionShown("app.one").nextReminderAtSeconds)
+        assertTrue(evaluate(1_680L, 1_200L).isDue)
+        assertEquals(2_160L, tracker.onSessionInterventionShown("app.one").nextReminderAtSeconds)
+        assertTrue(evaluate(2_160L, 1_200L).isDue)
+        assertEquals(2_460L, tracker.onSessionInterventionShown("app.one").nextReminderAtSeconds)
+        assertTrue(evaluate(2_460L, 1_200L).isDue)
+        assertEquals(2_760L, tracker.onSessionInterventionShown("app.one").nextReminderAtSeconds)
+    }
+
+    @Test
+    fun endingSessionRestartsProgressionFromFirstReminder() {
+        assertTrue(evaluate(600L, 600L).isDue)
+        tracker.onSessionInterventionShown("app.one")
 
         tracker.endSession()
 
-        assertTrue(tracker.consumeSessionIntervention(state("app.one", 1_800L), 1_800L))
+        assertFalse(evaluate(599L, 600L).isDue)
+        assertTrue(evaluate(600L, 600L).isDue)
+        assertEquals(0, evaluate(600L, 600L).reminderCount)
     }
 
     @Test
-    fun reminderUpdatesDoNotResetInterventionWithinTheSameSession() {
-        assertTrue(tracker.consumeSessionIntervention(state("app.one", 1_800L), 1_800L))
-        tracker.update(state("app.one", 1_801L))
+    fun continuingAfterFirstReminderTargetsEighteenMinutesNotTwenty() {
+        assertTrue(evaluate(600L, 600L).isDue)
+        tracker.onSessionInterventionShown("app.one")
 
-        assertFalse(tracker.consumeSessionIntervention(state("app.one", 2_400L), 1_200L))
+        assertFalse(evaluate(1_079L, 600L).isDue)
+        assertTrue(evaluate(1_080L, 600L).isDue)
     }
 
     @Test
-    fun loweringThresholdTriggersOnNextUpdateWithoutRepeating() {
-        assertFalse(tracker.consumeSessionIntervention(state("app.one", 1_500L), 1_800L))
-        assertTrue(tracker.consumeSessionIntervention(state("app.one", 1_501L), 1_200L))
-        assertFalse(tracker.consumeSessionIntervention(state("app.one", 1_502L), 1_200L))
+    fun dueReminderDoesNotAdvanceUntilOverlayDisplayIsConfirmed() {
+        val firstAttempt = evaluate(600L, 600L)
+        val secondAttempt = evaluate(601L, 600L)
+
+        assertTrue(firstAttempt.isDue)
+        assertTrue(secondAttempt.isDue)
+        assertEquals(0, secondAttempt.reminderCount)
+        assertEquals(600L, secondAttempt.nextReminderAtSeconds)
     }
+
+    @Test
+    fun loweringThresholdBeforeFirstReminderTriggersOnNextTick() {
+        assertFalse(evaluate(900L, 1_200L).isDue)
+
+        val lowered = evaluate(901L, 600L)
+
+        assertTrue(lowered.isDue)
+        assertEquals(600L, lowered.firstReminderSeconds)
+        assertEquals(0, lowered.reminderCount)
+    }
+
+    @Test
+    fun changingFirstReminderAfterProgressionStartedDoesNotMoveCurrentStage() {
+        assertTrue(evaluate(600L, 600L).isDue)
+        tracker.onSessionInterventionShown("app.one")
+        assertTrue(evaluate(1_080L, 600L).isDue)
+        tracker.onSessionInterventionShown("app.one")
+
+        val changed = evaluate(1_100L, 1_200L)
+
+        assertFalse(changed.isDue)
+        assertEquals(600L, changed.firstReminderSeconds)
+        assertEquals(2, changed.reminderCount)
+        assertEquals(1_560L, changed.nextReminderAtSeconds)
+    }
+
+    private fun evaluate(currentSeconds: Long, firstReminderSeconds: Long) =
+        tracker.evaluateSessionIntervention(
+            timerState = state("app.one", currentSeconds),
+            configuredReminderSeconds = firstReminderSeconds,
+        )
 
     private fun state(packageName: String, seconds: Long) = TimerState(
         packageName = packageName,

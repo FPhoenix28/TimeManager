@@ -388,11 +388,16 @@ private fun SessionReminderEditorDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.compact)) {
                 Text("选择提醒时间，或输入5到180分钟。")
+                Text(
+                    text = "首次提醒后，将在连续使用8分钟、8分钟，之后每5分钟再次提醒。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(TimeManagerSpacing.small),
                 ) {
-                    listOf(15, 20, 30).forEach { minutes ->
+                    listOf(10, 15, 20).forEach { minutes ->
                         OutlinedButton(
                             onClick = { onPreset(minutes) },
                             enabled = !editor.isSaving,
@@ -404,7 +409,7 @@ private fun SessionReminderEditorDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(TimeManagerSpacing.small),
                 ) {
-                    listOf(45, 60).forEach { minutes ->
+                    listOf(30, 45, 60).forEach { minutes ->
                         OutlinedButton(
                             onClick = { onPreset(minutes) },
                             enabled = !editor.isSaving,

@@ -245,22 +245,13 @@ class UsageMonitorService : Service() {
             sessionReminderMinutesByPackage[foregroundApp.packageName]
                 ?: SessionSettingsRepository.DEFAULT_REMINDER_MINUTES
             ) * SECONDS_PER_MINUTE
-        val sessionTriggered = sessionTracker.consumeSessionIntervention(
+        val sessionProgress = sessionTracker.evaluateSessionIntervention(
             timerState = timerState,
             configuredReminderSeconds = configuredReminderSeconds,
         )
+        val sessionDue = sessionProgress.isDue
         val diagnosticTick =
             timerState.currentSessionSeconds % DIAGNOSTIC_LOG_INTERVAL_SECONDS == 0L
-        if (diagnosticTick || sessionTriggered || isNewSession) {
-            Log.d(
-                SESSION_TRACKER_TAG,
-                "packageName=${foregroundApp.packageName} " +
-                    "currentSessionSeconds=${timerState.currentSessionSeconds} " +
-                    "configuredReminderSeconds=$configuredReminderSeconds " +
-                    "hasShownReminder=${sessionTracker.hasShownSessionIntervention()} " +
-                    "shouldTrigger=$sessionTriggered",
-            )
-        }
         sessionTracker.update(timerState)?.let { reminder ->
             alertNotificationHelper.sendSessionReminder(
                 packageName = foregroundApp.packageName,
@@ -348,27 +339,15 @@ class UsageMonitorService : Service() {
                 Log.e(TAG, "intervention failed but monitoring continues", error)
             }
         }
-        val selectedIntervention = when {
-            dailyLimitTriggered -> InterventionType.DAILY_LIMIT_REACHED
-            sessionTriggered && !interventionOverlayController.isShowing() ->
-                InterventionType.SESSION_REMINDER
-            else -> null
-        }
-        if (diagnosticTick || selectedIntervention != null || isNewSession) {
-            Log.d(
-                INTERVENTION_TAG,
-                "InterventionType=$selectedIntervention " +
-                    "packageName=${foregroundApp.packageName} " +
-                    "sessionSeconds=${timerState.currentSessionSeconds} " +
-                    "todayUsageSeconds=$todayUsageSeconds " +
-                    "dailyLimitSeconds=${limitEvaluation?.limitSeconds} " +
-                    "sessionTriggered=$sessionTriggered " +
-                    "dailyLimitTriggered=$dailyLimitTriggered " +
-                    "selectedIntervention=$selectedIntervention",
-            )
-        }
+        val selectedIntervention = selectInterventionType(
+            dailyLimitTriggered = dailyLimitTriggered,
+            sessionDue = sessionDue,
+            overlayShowing = interventionOverlayController.isShowing(),
+        )
+        var sessionInterventionShown = false
+        var progressAfterDisplay = sessionProgress
         if (selectedIntervention == InterventionType.SESSION_REMINDER) {
-            showSessionIntervention(
+            sessionInterventionShown = showSessionIntervention(
                 LimitInterventionRequest.sessionReminder(
                     packageName = foregroundApp.packageName,
                     appName = foregroundApp.appName,
@@ -376,6 +355,37 @@ class UsageMonitorService : Service() {
                     currentSessionSeconds = timerState.currentSessionSeconds,
                     configuredReminderSeconds = configuredReminderSeconds,
                 ),
+            )
+            if (sessionInterventionShown) {
+                progressAfterDisplay = sessionTracker.onSessionInterventionShown(
+                    foregroundApp.packageName,
+                )
+            }
+        }
+        if (diagnosticTick || sessionDue || selectedIntervention != null || isNewSession) {
+            Log.d(
+                SESSION_TRACKER_TAG,
+                "SessionReminder: " +
+                    "packageName=${foregroundApp.packageName} " +
+                    "currentSessionSeconds=${timerState.currentSessionSeconds} " +
+                    "firstReminderSeconds=${sessionProgress.firstReminderSeconds} " +
+                    "reminderCount=${sessionProgress.reminderCount} " +
+                    "nextReminderAtSeconds=${sessionProgress.nextReminderAtSeconds} " +
+                    "nextAfterDisplaySeconds=${progressAfterDisplay.nextReminderAtSeconds} " +
+                    "interventionType=$selectedIntervention " +
+                    "overlayVisible=${interventionOverlayController.isShowing()} " +
+                    "didTrigger=$sessionInterventionShown",
+            )
+            Log.d(
+                INTERVENTION_TAG,
+                "InterventionType=$selectedIntervention " +
+                    "packageName=${foregroundApp.packageName} " +
+                    "sessionSeconds=${timerState.currentSessionSeconds} " +
+                    "todayUsageSeconds=$todayUsageSeconds " +
+                    "dailyLimitSeconds=${limitEvaluation?.limitSeconds} " +
+                    "sessionDue=$sessionDue " +
+                    "dailyLimitTriggered=$dailyLimitTriggered " +
+                    "selectedIntervention=$selectedIntervention",
             )
         }
     }
@@ -483,7 +493,7 @@ class UsageMonitorService : Service() {
         }
     }
 
-    private suspend fun showSessionIntervention(request: LimitInterventionRequest) {
+    private suspend fun showSessionIntervention(request: LimitInterventionRequest): Boolean {
         val wasShown = interventionOverlayController.show(
             request = request,
             onExit = {
@@ -511,6 +521,7 @@ class UsageMonitorService : Service() {
             clearActiveIntervention()
             Log.w(TAG, "session intervention failed but monitoring continues")
         }
+        return wasShown
     }
 
     private fun clearActiveIntervention() {
@@ -614,4 +625,14 @@ class UsageMonitorService : Service() {
         const val FOREGROUND_NOTIFICATION_TAG = "ForegroundNotification"
         const val USAGE_LIMIT_EVALUATOR_TAG = "UsageLimitEvaluator"
     }
+}
+
+internal fun selectInterventionType(
+    dailyLimitTriggered: Boolean,
+    sessionDue: Boolean,
+    overlayShowing: Boolean,
+): InterventionType? = when {
+    dailyLimitTriggered -> InterventionType.DAILY_LIMIT_REACHED
+    sessionDue && !overlayShowing -> InterventionType.SESSION_REMINDER
+    else -> null
 }
