@@ -7,7 +7,7 @@ import android.content.Context
 import android.util.Log
 import com.example.timemanager.data.model.AppUsage
 
-/** Reads this device's app-usage statistics for the current day. */
+/** Reads this device's app-usage statistics from Android usage events. */
 class UsageStatsReader(
     private val context: Context,
 ) {
@@ -24,60 +24,92 @@ class UsageStatsReader(
     }
 
     fun getUsageSince(startTimeMillis: Long): List<AppUsage> {
+        return when (
+            val result = getUsageBetween(
+                startTimeMillis = startTimeMillis,
+                endTimeMillis = System.currentTimeMillis(),
+            )
+        ) {
+            is UsageStatsQueryResult.Success -> result.usages
+            UsageStatsQueryResult.Unavailable -> emptyList()
+        }
+    }
+
+    fun getUsageBetween(
+        startTimeMillis: Long,
+        endTimeMillis: Long,
+    ): UsageStatsQueryResult {
         if (!hasUsageAccess()) {
-            Log.w(TAG, "Usage access is not granted; returning an empty usage list.")
-            return emptyList()
+            Log.w(TAG, "Usage access is not granted; usage interval is unavailable.")
+            return UsageStatsQueryResult.Unavailable
         }
 
-        val now = System.currentTimeMillis()
-        if (startTimeMillis >= now) return emptyList()
-        val usageStatsManager = context.getSystemService(UsageStatsManager::class.java)
-        val durationsByPackage = aggregateForegroundEvents(
-            usageStatsManager = usageStatsManager,
-            startTimeMillis = startTimeMillis,
-            endTimeMillis = now,
-        )
-
-        val appUsageList = durationsByPackage
-            .asSequence()
-            .filter { (packageName, duration) ->
-                duration > 0L && packageName != context.packageName
+        if (startTimeMillis >= endTimeMillis) {
+            return UsageStatsQueryResult.Success(emptyList())
+        }
+        return runCatching {
+            val usageStatsManager = context.getSystemService(UsageStatsManager::class.java)
+            val durationsByPackage = aggregateForegroundEvents(
+                usageStatsManager = usageStatsManager,
+                startTimeMillis = startTimeMillis,
+                endTimeMillis = endTimeMillis,
+            )
+            // An empty event window cannot prove zero use: the OS may no longer retain it.
+            if (!durationsByPackage.hasEventsInRange && durationsByPackage.durations.isEmpty()) {
+                Log.w(TAG, "No usage events available for start=$startTimeMillis end=$endTimeMillis")
+                return@runCatching UsageStatsQueryResult.Unavailable
             }
-            .mapNotNull { (packageName, duration) ->
-                val installedApp = installedAppInfoProvider.getUserInstalledApp(packageName)
-                    ?: return@mapNotNull null
-                AppUsage(
-                    appName = installedApp.appName,
-                    packageName = packageName,
-                    usageTimeMillis = duration,
-                    appIcon = installedApp.appIcon,
-                )
-            }
-            .sortedByDescending(AppUsage::usageTimeMillis)
-            .toList()
-
-        Log.d(
-            TAG,
-            buildString {
-                append("AppUsageList:")
-                appUsageList.forEach { appUsage ->
-                    append("\n")
-                    append(appUsage.appName)
-                    append(" ")
-                    append(appUsage.usageTimeMillis / MILLIS_PER_MINUTE)
-                    append("min")
+            val appUsageList = durationsByPackage.durations
+                .asSequence()
+                .filter { (packageName, duration) ->
+                    duration > 0L && packageName != context.packageName
                 }
-            },
-        )
+                .mapNotNull { (packageName, duration) ->
+                    val installedApp = installedAppInfoProvider.getUserInstalledApp(packageName)
+                        ?: return@mapNotNull null
+                    AppUsage(
+                        appName = installedApp.appName,
+                        packageName = packageName,
+                        usageTimeMillis = duration,
+                        appIcon = installedApp.appIcon,
+                    )
+                }
+                .sortedByDescending(AppUsage::usageTimeMillis)
+                .toList()
 
-        return appUsageList
+            Log.d(
+                TAG,
+                buildString {
+                    append("AppUsageList: start=")
+                    append(startTimeMillis)
+                    append(" end=")
+                    append(endTimeMillis)
+                    appUsageList.forEach { appUsage ->
+                        append("\n")
+                        append(appUsage.appName)
+                        append(" ")
+                        append(appUsage.usageTimeMillis / MILLIS_PER_MINUTE)
+                        append("min")
+                    }
+                },
+            )
+
+            UsageStatsQueryResult.Success(appUsageList)
+        }.getOrElse { error ->
+            Log.e(
+                TAG,
+                "Unable to query usage interval start=$startTimeMillis end=$endTimeMillis",
+                error,
+            )
+            UsageStatsQueryResult.Unavailable
+        }
     }
 
     private fun aggregateForegroundEvents(
         usageStatsManager: UsageStatsManager,
         startTimeMillis: Long,
         endTimeMillis: Long,
-    ): Map<String, Long> {
+    ): AggregatedEvents {
         val events = usageStatsManager.queryEvents(
             (startTimeMillis - EVENT_LOOKBACK_MILLIS).coerceAtLeast(0L),
             endTimeMillis,
@@ -87,6 +119,7 @@ class UsageStatsReader(
         val activeActivityCount = mutableMapOf<String, Int>()
         val packageSessionStart = mutableMapOf<String, Long>()
         val durations = mutableMapOf<String, Long>()
+        var hasEventsInRange = false
 
         fun finishPackageSession(packageName: String, timestamp: Long) {
             val sessionStart = packageSessionStart.remove(packageName) ?: return
@@ -107,6 +140,9 @@ class UsageStatsReader(
 
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
+            if (event.timeStamp >= startTimeMillis && event.timeStamp < endTimeMillis) {
+                hasEventsInRange = true
+            }
             val packageName = event.packageName ?: continue
             val activityKey = "$packageName:${event.className.orEmpty()}"
 
@@ -141,8 +177,13 @@ class UsageStatsReader(
         }
 
         finishAllSessions(endTimeMillis)
-        return durations
+        return AggregatedEvents(durations, hasEventsInRange)
     }
+
+    private data class AggregatedEvents(
+        val durations: Map<String, Long>,
+        val hasEventsInRange: Boolean,
+    )
 
     private companion object {
         const val TAG = "UsageStatsReader"

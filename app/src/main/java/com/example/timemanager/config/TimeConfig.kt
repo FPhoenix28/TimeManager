@@ -12,4 +12,9 @@ data class TimeConfig(
         require(secondSessionReminderSeconds > firstSessionReminderSeconds)
         require(extensionDurationSeconds > 0L)
     }
+
+    companion object {
+        const val LIMIT_EXTENSION_MINUTES = 15L
+        const val LIMIT_EXTENSION_SECONDS = LIMIT_EXTENSION_MINUTES * 60L
+    }
 }

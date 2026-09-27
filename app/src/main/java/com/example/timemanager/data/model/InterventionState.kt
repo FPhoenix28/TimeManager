@@ -5,6 +5,5 @@ data class InterventionState(
     val packageName: String,
     val usageDayKey: String,
     val gracePeriodEndTime: Long,
-    val extensionsUsed: Int,
     val todayExtensionSeconds: Long,
 )

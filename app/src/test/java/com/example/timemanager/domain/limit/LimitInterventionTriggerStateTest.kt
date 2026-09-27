@@ -75,6 +75,41 @@ class LimitInterventionTriggerStateTest {
         assertTrue(atSnapshot.limitCrossed)
     }
 
+    @Test
+    fun `each new unlimited extension boundary can trigger again`() {
+        val packageName = "example.app"
+        var effectiveLimitMinutes = 60
+
+        repeat(4) {
+            val atLimit = evaluator.evaluate(
+                packageName,
+                effectiveLimitMinutes * 60L,
+                effectiveLimitMinutes,
+            )
+            val snapshot = triggerState.evaluate(
+                packageName,
+                USAGE_DAY,
+                atLimit.isLimitReached,
+            )
+            assertTrue(snapshot.limitCrossed)
+
+            triggerState.onLimitExtended(packageName, USAGE_DAY)
+            effectiveLimitMinutes += 15
+            val belowNextLimit = evaluator.evaluate(
+                packageName,
+                effectiveLimitMinutes * 60L - 1L,
+                effectiveLimitMinutes,
+            )
+            assertFalse(
+                triggerState.evaluate(
+                    packageName,
+                    USAGE_DAY,
+                    belowNextLimit.isLimitReached,
+                ).limitCrossed,
+            )
+        }
+    }
+
     private fun evaluate(
         packageName: String,
         usedSeconds: Long,

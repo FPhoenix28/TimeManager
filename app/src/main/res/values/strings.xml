@@ -1,3 +1,5 @@
 <resources>
+    <string name="focus_accessibility_label">TimeManager 专注与静心模式</string>
+    <string name="focus_accessibility_description">在专注或静心期间识别当前打开的应用，并按你启用的模式将受限应用送回桌面。不会读取页面内容。</string>
     <string name="app_name">TimeManager</string>
 </resources>

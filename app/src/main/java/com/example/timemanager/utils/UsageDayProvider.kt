@@ -1,6 +1,7 @@
 package com.example.timemanager.utils
 
 import java.time.Clock
+import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZonedDateTime
 
@@ -18,15 +19,25 @@ class UsageDayProvider(
         } else {
             resetToday
         }
+        return usageDay(start.toLocalDate())
+    }
+
+    /** Resolves one persisted usage-date key to its local 04:00-to-04:00 interval. */
+    fun usageDay(usageDate: LocalDate): UsageDay {
+        val start = usageDate
+            .atTime(RESET_TIME)
+            .atZone(clock.zone)
         return UsageDay(
-            key = start.toLocalDate().toString(),
+            key = usageDate.toString(),
             startTimeMillis = start.toInstant().toEpochMilli(),
+            endTimeMillis = start.plusDays(1L).toInstant().toEpochMilli(),
         )
     }
 
     data class UsageDay(
         val key: String,
         val startTimeMillis: Long,
+        val endTimeMillis: Long,
     )
 
     private companion object {

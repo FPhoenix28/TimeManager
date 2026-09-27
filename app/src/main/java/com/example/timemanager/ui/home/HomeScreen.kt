@@ -31,6 +31,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import com.example.timemanager.R
+import com.example.timemanager.data.model.FocusModeState
+import com.example.timemanager.data.model.FocusModeType
+import com.example.timemanager.ui.focus.FocusCountdown
 import com.example.timemanager.ui.components.AppIcon
 import com.example.timemanager.ui.components.EmptyState
 import com.example.timemanager.ui.components.FullScreenError
@@ -47,12 +50,22 @@ fun HomeScreen(
     onOpenManagement: () -> Unit,
     onOpenAppDetail: (String) -> Unit,
     onOpenStatistics: () -> Unit,
+    focusState: FocusModeState,
+    onOpenFocus: () -> Unit,
+    onOpenDeepFocus: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     when (val state = uiState) {
-        HomeUiState.Loading -> LoadingContent(modifier)
+        HomeUiState.Loading -> FocusHomeFallback(
+            focusState = focusState,
+            onOpenFocus = onOpenFocus,
+            onOpenDeepFocus = onOpenDeepFocus,
+            onOpenSettings = onOpenPermissionSettings,
+            message = "正在读取今日使用情况…",
+            modifier = modifier,
+        )
         is HomeUiState.Success -> HomeDashboard(
             appUsages = state.appUsages,
             weeklyTrend = state.weeklyTrend,
@@ -61,18 +74,41 @@ fun HomeScreen(
             onOpenManagement = onOpenManagement,
             onOpenAppDetail = onOpenAppDetail,
             onOpenStatistics = onOpenStatistics,
+            focusState = focusState,
+            onOpenFocus = onOpenFocus,
+            onOpenDeepFocus = onOpenDeepFocus,
             modifier = modifier,
         )
-        is HomeUiState.Error -> ErrorContent(
-            message = state.message,
+        is HomeUiState.Error -> FocusHomeFallback(
+            focusState = focusState,
+            onOpenFocus = onOpenFocus,
+            onOpenDeepFocus = onOpenDeepFocus,
+            onOpenSettings = onOpenPermissionSettings,
+            message = "读取使用时间失败：${state.message}",
             modifier = modifier,
         )
     }
 }
 
 @Composable
-private fun LoadingContent(modifier: Modifier = Modifier) {
-    FullScreenLoading(modifier)
+private fun FocusHomeFallback(
+    focusState: FocusModeState,
+    onOpenFocus: () -> Unit,
+    onOpenDeepFocus: () -> Unit,
+    onOpenSettings: () -> Unit,
+    message: String,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(TimeManagerSpacing.medium),
+        verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.medium),
+    ) {
+        HomeTopBar(onOpenSettings)
+        FocusModeEntries(focusState, onOpenFocus, onOpenDeepFocus)
+        Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
 }
 
 @Composable
@@ -84,6 +120,9 @@ private fun HomeDashboard(
     onOpenManagement: () -> Unit,
     onOpenAppDetail: (String) -> Unit,
     onOpenStatistics: () -> Unit,
+    focusState: FocusModeState,
+    onOpenFocus: () -> Unit,
+    onOpenDeepFocus: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val managedApps = remember(appUsages) {
@@ -114,6 +153,10 @@ private fun HomeDashboard(
                 weeklyTrend = weeklyTrend,
                 onOpenStatistics = onOpenStatistics,
             )
+        }
+
+        item("focusEntry") {
+            FocusModeEntries(focusState, onOpenFocus, onOpenDeepFocus)
         }
 
         if (!hasRequiredPermissions) {
@@ -166,6 +209,81 @@ private fun HomeDashboard(
                     modifier = Modifier.padding(start = TimeManagerSpacing.medium + TimeManagerSpacing.extraLarge),
                     color = MaterialTheme.colorScheme.outlineVariant,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FocusModeEntries(
+    focusState: FocusModeState,
+    onOpenFocus: () -> Unit,
+    onOpenDeepFocus: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.small)) {
+        when (focusState.mode) {
+            FocusModeType.FOCUS -> {
+                ModeEntry(
+                    title = "专注模式",
+                    description = if (focusState.isActive()) "专注进行中" else "专注已结束",
+                    onClick = onOpenFocus,
+                    endTimeMillis = focusState.endTimeMillis.takeIf { focusState.isActive() },
+                )
+                if (focusState.isActive()) {
+                    TextButton(onClick = onOpenDeepFocus) {
+                        Text("改为静心模式")
+                    }
+                }
+            }
+            FocusModeType.DEEP_FOCUS -> ModeEntry(
+                title = "静心模式",
+                description = if (focusState.isDeepFocusCompleted()) "静心结束" else "静心进行中",
+                onClick = onOpenDeepFocus,
+                endTimeMillis = focusState.endTimeMillis.takeIf { focusState.isDeepFocusActive() },
+            )
+            FocusModeType.OFF -> {
+                ModeEntry(
+                    title = "专注模式",
+                    description = "暂时屏蔽容易分心的应用",
+                    onClick = onOpenFocus,
+                )
+                ModeEntry(
+                    title = "静心模式",
+                    description = "在一段时间内离开手机",
+                    onClick = onOpenDeepFocus,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModeEntry(
+    title: String,
+    description: String,
+    onClick: () -> Unit,
+    endTimeMillis: Long? = null,
+) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().padding(top = TimeManagerSpacing.large),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+        ),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(TimeManagerSpacing.medium),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Text(description, style = MaterialTheme.typography.bodyMedium)
+            }
+            if (endTimeMillis != null) {
+                FocusCountdown(endTimeMillis, MaterialTheme.typography.titleMedium)
+            } else {
+                Text("进入 ›", style = MaterialTheme.typography.labelLarge)
             }
         }
     }

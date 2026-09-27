@@ -46,6 +46,16 @@ interface UsageHistoryDao {
         endDate: String,
     ): Flow<List<UsageHistoryEntity>>
 
+    @Query(
+        """SELECT * FROM usage_history
+        WHERE usageDate BETWEEN :startDate AND :endDate
+        ORDER BY usageDate ASC""",
+    )
+    suspend fun getHistoryBetween(
+        startDate: String,
+        endDate: String,
+    ): List<UsageHistoryEntity>
+
     @Query("SELECT * FROM usage_history WHERE usageDate = :usageDate ORDER BY usageSeconds DESC")
     suspend fun getDay(usageDate: String): List<UsageHistoryEntity>
 

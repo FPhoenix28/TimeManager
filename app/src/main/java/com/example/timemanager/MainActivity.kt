@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.timemanager.data.preferences.AppLimitPreferences
 import com.example.timemanager.data.local.AppDatabase
 import com.example.timemanager.data.preferences.RealtimeUsagePreferences
@@ -39,6 +40,7 @@ import com.example.timemanager.data.preferences.OnboardingPreferences
 import com.example.timemanager.data.preferences.NotificationStatePreferences
 import com.example.timemanager.data.preferences.SessionSettingsPreferences
 import com.example.timemanager.data.preferences.TrackedAppPreferences
+import com.example.timemanager.data.preferences.FocusModePreferences
 import com.example.timemanager.data.repository.InstalledAppInfoProvider
 import com.example.timemanager.data.repository.InstalledAppRepository
 import com.example.timemanager.data.repository.LimitRepository
@@ -47,10 +49,12 @@ import com.example.timemanager.data.repository.NotificationStateRepository
 import com.example.timemanager.data.repository.SessionSettingsRepository
 import com.example.timemanager.data.repository.InterventionRepository
 import com.example.timemanager.data.repository.TrackedAppRepository
+import com.example.timemanager.data.repository.FocusModeRepository
 import com.example.timemanager.data.repository.UsageStatsReader
 import com.example.timemanager.data.repository.UsageRepository
 import com.example.timemanager.data.repository.UsageTimeRepository
 import com.example.timemanager.data.repository.UsageHistoryRepository
+import com.example.timemanager.domain.history.UsageHistoryBackfillManager
 import com.example.timemanager.ui.theme.TimeManagerTheme
 import com.example.timemanager.ui.home.HomeScreen
 import com.example.timemanager.ui.home.HomeViewModel
@@ -69,17 +73,27 @@ import com.example.timemanager.ui.statistics.AppHistoryScreen
 import com.example.timemanager.ui.statistics.AppHistoryViewModel
 import com.example.timemanager.ui.components.PrimaryDestination
 import com.example.timemanager.ui.components.TimeManagerNavigationBar
+import com.example.timemanager.ui.focus.FocusViewModel
+import com.example.timemanager.ui.focus.FocusSetupScreen
+import com.example.timemanager.ui.focus.FocusActiveScreen
+import com.example.timemanager.ui.focus.DeepFocusViewModel
+import com.example.timemanager.ui.focus.DeepFocusSetupScreen
+import com.example.timemanager.ui.focus.DeepFocusActiveScreen
 import com.example.timemanager.utils.UsagePermissionManager
 import com.example.timemanager.utils.OverlayPermissionManager
+import com.example.timemanager.utils.AccessibilityPermissionManager
 import com.example.timemanager.notifications.NotificationHelper
+import com.example.timemanager.notifications.DeepFocusNotificationHelper
 import com.example.timemanager.service.UsageMonitorService
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private var hasUsageAccess by mutableStateOf(false)
     private var hasNotificationPermission by mutableStateOf(false)
     private var hasOverlayPermission by mutableStateOf(false)
+    private var hasAccessibilityPermission by mutableStateOf(false)
     private var onboardingCompleted by mutableStateOf<Boolean?>(null)
     private var destination by mutableStateOf(AppDestination.HOME)
     private lateinit var onboardingPreferences: OnboardingPreferences
@@ -89,6 +103,9 @@ class MainActivity : ComponentActivity() {
     private lateinit var managedAppDetailViewModel: ManagedAppDetailViewModel
     private lateinit var statisticsViewModel: StatisticsViewModel
     private lateinit var appHistoryViewModel: AppHistoryViewModel
+    private lateinit var focusViewModel: FocusViewModel
+    private lateinit var deepFocusViewModel: DeepFocusViewModel
+    private lateinit var usageHistoryBackfillManager: UsageHistoryBackfillManager
     private var detailPackageName: String? = null
     private var appHistoryPackageName: String? = null
     private var appHistoryBackDestination = AppDestination.HOME
@@ -119,6 +136,10 @@ class MainActivity : ComponentActivity() {
         val trackedAppRepository = TrackedAppRepository(
             TrackedAppPreferences(applicationContext),
         )
+        val focusModeRepository = FocusModeRepository(
+            FocusModePreferences(applicationContext),
+            packageName,
+        )
         val notificationStateRepository = NotificationStateRepository(
             NotificationStatePreferences(applicationContext),
         )
@@ -135,10 +156,16 @@ class MainActivity : ComponentActivity() {
         val usageHistoryRepository = UsageHistoryRepository(
             AppDatabase.getInstance(applicationContext).usageHistoryDao(),
         )
+        val usageStatsReader = UsageStatsReader(applicationContext)
         val usageTimeRepository = UsageTimeRepository(
-            usageRepository = UsageRepository(UsageStatsReader(applicationContext)),
+            usageRepository = UsageRepository(usageStatsReader),
             preferences = RealtimeUsagePreferences(applicationContext),
             historyRepository = usageHistoryRepository,
+        )
+        usageHistoryBackfillManager = UsageHistoryBackfillManager(
+            usageStatsReader = usageStatsReader,
+            historyRepository = usageHistoryRepository,
+            trackedAppRepository = trackedAppRepository,
         )
         homeViewModel = ViewModelProvider(
             this,
@@ -196,12 +223,27 @@ class MainActivity : ComponentActivity() {
                 installedAppRepository = installedAppRepository,
             ),
         )[AppHistoryViewModel::class.java]
+        focusViewModel = ViewModelProvider(
+            this,
+            FocusViewModel.Factory(
+                focusModeRepository,
+                installedAppRepository,
+                trackedAppRepository,
+                packageName,
+            ),
+        )[FocusViewModel::class.java]
+        deepFocusViewModel = ViewModelProvider(
+            this,
+            DeepFocusViewModel.Factory(focusModeRepository),
+        )[DeepFocusViewModel::class.java]
+        handleDeepFocusIntent(intent)
         restoreDestinationContent()
         lifecycleScope.launch {
             val completed = onboardingPreferences.observeCompleted().first()
             onboardingCompleted = completed
             if (completed && hasUsageAccess) {
                 startUsageMonitorService()
+                triggerHistoryBackfill()
                 if (destination == AppDestination.HOME) {
                     homeViewModel.loadTodayUsage()
                 }
@@ -209,6 +251,7 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             TimeManagerTheme {
+                val focusState by focusViewModel.focusState.collectAsStateWithLifecycle()
                 val primaryDestination = destination.toPrimaryDestination()
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
@@ -222,6 +265,7 @@ class MainActivity : ComponentActivity() {
                                             destination = AppDestination.HOME
                                         }
                                         PrimaryDestination.STATISTICS -> {
+                                            triggerHistoryBackfill()
                                             statisticsViewModel.loadIfNeeded()
                                             destination = AppDestination.STATISTICS
                                         }
@@ -239,6 +283,7 @@ class MainActivity : ComponentActivity() {
                         usageAccessGranted = hasUsageAccess,
                         notificationGranted = hasNotificationPermission,
                         overlayGranted = hasOverlayPermission,
+                        accessibilityGranted = hasAccessibilityPermission,
                     )
                     when (onboardingCompleted) {
                         null -> Box(
@@ -289,8 +334,28 @@ class MainActivity : ComponentActivity() {
                                     destination = AppDestination.MANAGED_APP_DETAIL
                                 },
                                 onOpenStatistics = {
+                                    triggerHistoryBackfill()
                                     statisticsViewModel.loadIfNeeded()
                                     destination = AppDestination.STATISTICS
+                                },
+                                focusState = focusState,
+                                onOpenFocus = {
+                                    focusViewModel.loadAppsIfNeeded()
+                                    destination = if (focusViewModel.focusState.value.isActive()) {
+                                        AppDestination.FOCUS_ACTIVE
+                                    } else {
+                                        AppDestination.FOCUS_SETUP
+                                    }
+                                },
+                                onOpenDeepFocus = {
+                                    destination = if (
+                                        focusViewModel.focusState.value.mode ==
+                                        com.example.timemanager.data.model.FocusModeType.DEEP_FOCUS
+                                    ) {
+                                        AppDestination.DEEP_FOCUS_ACTIVE
+                                    } else {
+                                        AppDestination.DEEP_FOCUS_SETUP
+                                    }
                                 },
                                 modifier = Modifier.padding(innerPadding),
                             )
@@ -322,6 +387,42 @@ class MainActivity : ComponentActivity() {
                                 onBack = { destination = permissionsBackDestination },
                                 onRequestUsageAccess = ::openUsageAccessSettings,
                                 onRequestNotification = ::requestNotificationPermission,
+                                onRequestOverlay = ::openOverlaySettings,
+                                onRequestAccessibility = ::openAccessibilitySettings,
+                                modifier = Modifier.padding(innerPadding),
+                            )
+                            AppDestination.FOCUS_SETUP -> FocusSetupScreen(
+                                viewModel = focusViewModel,
+                                accessibilityEnabled = hasAccessibilityPermission,
+                                onBack = { destination = AppDestination.HOME },
+                                onStarted = { destination = AppDestination.FOCUS_ACTIVE },
+                                onRequestAccessibility = ::openAccessibilitySettings,
+                                modifier = Modifier.padding(innerPadding),
+                            )
+                            AppDestination.FOCUS_ACTIVE -> FocusActiveScreen(
+                                viewModel = focusViewModel,
+                                accessibilityEnabled = hasAccessibilityPermission,
+                                onBack = { destination = AppDestination.HOME },
+                                onStopped = { destination = AppDestination.HOME },
+                                onRequestAccessibility = ::openAccessibilitySettings,
+                                modifier = Modifier.padding(innerPadding),
+                            )
+                            AppDestination.DEEP_FOCUS_SETUP -> DeepFocusSetupScreen(
+                                viewModel = deepFocusViewModel,
+                                accessibilityEnabled = hasAccessibilityPermission,
+                                overlayEnabled = hasOverlayPermission,
+                                onBack = { destination = AppDestination.HOME },
+                                onStarted = { destination = AppDestination.DEEP_FOCUS_ACTIVE },
+                                onRequestAccessibility = ::openAccessibilitySettings,
+                                onRequestOverlay = ::openOverlaySettings,
+                                modifier = Modifier.padding(innerPadding),
+                            )
+                            AppDestination.DEEP_FOCUS_ACTIVE -> DeepFocusActiveScreen(
+                                viewModel = deepFocusViewModel,
+                                accessibilityEnabled = hasAccessibilityPermission,
+                                overlayEnabled = hasOverlayPermission,
+                                onEnded = { destination = AppDestination.HOME },
+                                onRequestAccessibility = ::openAccessibilitySettings,
                                 onRequestOverlay = ::openOverlaySettings,
                                 modifier = Modifier.padding(innerPadding),
                             )
@@ -374,6 +475,7 @@ class MainActivity : ComponentActivity() {
         refreshPermissionStatus()
         if (onboardingCompleted == true && hasUsageAccess) {
             startUsageMonitorService()
+            triggerHistoryBackfill()
             when (destination) {
                 AppDestination.HOME -> homeViewModel.loadTodayUsage()
                 AppDestination.MANAGED_APP_DETAIL -> managedAppDetailViewModel.refresh()
@@ -382,9 +484,19 @@ class MainActivity : ComponentActivity() {
                 AppDestination.LIMITS,
                 AppDestination.APP_SELECTION,
                 AppDestination.PERMISSIONS,
+                AppDestination.FOCUS_SETUP,
+                AppDestination.FOCUS_ACTIVE,
+                AppDestination.DEEP_FOCUS_SETUP,
+                AppDestination.DEEP_FOCUS_ACTIVE,
                 -> Unit
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleDeepFocusIntent(intent)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -418,6 +530,12 @@ class MainActivity : ComponentActivity() {
                 managedAppDetailViewModel.open(it)
             } ?: run { destination = AppDestination.HOME }
             AppDestination.STATISTICS -> statisticsViewModel.refresh()
+            AppDestination.FOCUS_SETUP,
+            AppDestination.FOCUS_ACTIVE,
+            -> focusViewModel.loadAppsIfNeeded()
+            AppDestination.DEEP_FOCUS_SETUP,
+            AppDestination.DEEP_FOCUS_ACTIVE,
+            -> Unit
             AppDestination.APP_HISTORY -> appHistoryPackageName?.let {
                 appHistoryViewModel.open(it)
             } ?: run { destination = appHistoryBackDestination }
@@ -433,6 +551,10 @@ class MainActivity : ComponentActivity() {
 
     private fun openOverlaySettings() {
         startActivity(OverlayPermissionManager.settingsIntent(this))
+    }
+
+    private fun openAccessibilitySettings() {
+        startActivity(AccessibilityPermissionManager.settingsIntent())
     }
 
     private fun requestNotificationPermission() {
@@ -455,10 +577,12 @@ class MainActivity : ComponentActivity() {
                 Manifest.permission.POST_NOTIFICATIONS,
             ) == PackageManager.PERMISSION_GRANTED
         hasOverlayPermission = OverlayPermissionManager.canDrawOverlays(this)
+        hasAccessibilityPermission = AccessibilityPermissionManager.isEnabled(this)
         Log.d(TAG, "packageName=$packageName")
         Log.d(TAG, "hasUsageAccess=$hasUsageAccess")
         Log.d(TAG, "hasNotificationPermission=$hasNotificationPermission")
         Log.d(TAG, "hasOverlayPermission=$hasOverlayPermission")
+        Log.d(TAG, "hasAccessibilityPermission=$hasAccessibilityPermission")
     }
 
     private fun completeOnboarding() {
@@ -468,7 +592,21 @@ class MainActivity : ComponentActivity() {
             onboardingCompleted = true
             destination = AppDestination.HOME
             startUsageMonitorService()
+            triggerHistoryBackfill()
             homeViewModel.loadTodayUsage()
+        }
+    }
+
+    private fun triggerHistoryBackfill() {
+        lifecycleScope.launch {
+            try {
+                val result = usageHistoryBackfillManager.backfillIfNeeded()
+                Log.d(TAG, "historyBackfill=$result")
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Log.w(TAG, "History backfill failed; existing history remains available", error)
+            }
         }
     }
 
@@ -477,6 +615,12 @@ class MainActivity : ComponentActivity() {
             this,
             Intent(this, UsageMonitorService::class.java),
         )
+    }
+
+    private fun handleDeepFocusIntent(intent: Intent?) {
+        if (intent?.action == DeepFocusNotificationHelper.ACTION_OPEN_DEEP_FOCUS) {
+            destination = AppDestination.DEEP_FOCUS_ACTIVE
+        }
     }
 
     private companion object {
@@ -499,6 +643,10 @@ private enum class AppDestination {
     MANAGED_APP_DETAIL,
     STATISTICS,
     APP_HISTORY,
+    FOCUS_SETUP,
+    FOCUS_ACTIVE,
+    DEEP_FOCUS_SETUP,
+    DEEP_FOCUS_ACTIVE,
 }
 
 private fun AppDestination.toPrimaryDestination(): PrimaryDestination? = when (this) {

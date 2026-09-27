@@ -13,7 +13,7 @@ class DebugTimeConfigTest {
         assertFalse(BuildTimeConfig.value.debugTimeOverridesEnabled)
         assertEquals(15L * 60L, BuildTimeConfig.value.firstSessionReminderSeconds)
         assertEquals(30L * 60L, BuildTimeConfig.value.secondSessionReminderSeconds)
-        assertEquals(5L * 60L, BuildTimeConfig.value.extensionDurationSeconds)
+        assertEquals(15L * 60L, BuildTimeConfig.value.extensionDurationSeconds)
     }
 
     @Test

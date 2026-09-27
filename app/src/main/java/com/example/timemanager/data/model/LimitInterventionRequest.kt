@@ -10,7 +10,6 @@ data class LimitInterventionRequest(
     val effectiveLimitSeconds: Long,
     val exceededSeconds: Long,
     val currentSessionSeconds: Long,
-    val extensionsRemaining: Int,
     val extensionDurationSeconds: Long,
     val configuredSessionReminderSeconds: Long = 10L * 60L,
 ) {
@@ -31,7 +30,6 @@ data class LimitInterventionRequest(
             effectiveLimitSeconds = 0L,
             exceededSeconds = 0L,
             currentSessionSeconds = currentSessionSeconds,
-            extensionsRemaining = 0,
             extensionDurationSeconds = 0L,
             configuredSessionReminderSeconds = configuredReminderSeconds,
         )

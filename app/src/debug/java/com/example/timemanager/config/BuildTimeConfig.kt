@@ -12,7 +12,7 @@ object BuildTimeConfig {
         debugTimeOverridesEnabled = false,
         firstSessionReminderSeconds = 15L * 60L,
         secondSessionReminderSeconds = 30L * 60L,
-        extensionDurationSeconds = 5L * 60L,
+        extensionDurationSeconds = TimeConfig.LIMIT_EXTENSION_SECONDS,
     )
 
     /** Explicit opt-in fixture for tests; production quota DataStore keys are never changed. */

@@ -34,6 +34,9 @@ class UsageHistoryRepository(
     fun observeHistoryBetween(startDate: String, endDate: String):
         Flow<List<UsageHistoryEntity>> = dao.observeHistoryBetween(startDate, endDate)
 
+    suspend fun getHistoryBetween(startDate: String, endDate: String):
+        List<UsageHistoryEntity> = dao.getHistoryBetween(startDate, endDate)
+
     suspend fun getDay(usageDate: String) = dao.getDay(usageDate)
 
     suspend fun getAppTotal(packageName: String, startDate: String, endDate: String): Long =

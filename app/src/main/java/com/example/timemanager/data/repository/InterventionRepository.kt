@@ -13,12 +13,10 @@ class InterventionRepository(
         packageName: String,
         usageDayKey: String,
         extensionSeconds: Long,
-        maxExtensions: Int,
-    ): InterventionState? = preferences.grantExtension(
+    ): InterventionState = preferences.grantExtension(
         packageName,
         usageDayKey,
         extensionSeconds,
-        maxExtensions,
     )
 
     suspend fun clearGracePeriod(

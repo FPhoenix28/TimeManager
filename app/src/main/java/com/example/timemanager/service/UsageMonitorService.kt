@@ -468,11 +468,27 @@ class UsageMonitorService : Service() {
                     onContinue = {
                         serviceScope.launch {
                             timingMutex.withLock {
+                                val sessionBefore = sessionTracker.currentInterventionProgress(
+                                    request.packageName,
+                                )
                                 if (
                                     interventionManager.grantConfiguredExtension(
                                         request.packageName,
+                                        request.baseLimitSeconds,
                                     )
                                 ) {
+                                    val sessionAfter = sessionTracker.currentInterventionProgress(
+                                        request.packageName,
+                                    )
+                                    Log.d(
+                                        TAG,
+                                        "ExtensionSessionState: packageName=${request.packageName} " +
+                                            "currentSessionSeconds=${request.currentSessionSeconds} " +
+                                            "reminderCountBefore=${sessionBefore.reminderCount} " +
+                                            "reminderCountAfter=${sessionAfter.reminderCount} " +
+                                            "nextReminderBefore=${sessionBefore.nextReminderAtSeconds} " +
+                                            "nextReminderAfter=${sessionAfter.nextReminderAtSeconds}",
+                                    )
                                     interventionOverlayController.dismiss()
                                     clearActiveIntervention()
                                     reevaluateAfterExtension(request.packageName)

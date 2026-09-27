@@ -20,6 +20,7 @@ class LimitInterventionManager(
 ) {
     private val stateCache = mutableMapOf<String, InterventionState>()
     private val retryAfterByPackage = mutableMapOf<String, Long>()
+    private val lastTriggeredLimitByPackage = mutableMapOf<String, TriggeredLimit>()
     private val triggerState = LimitInterventionTriggerState()
     private var visiblePackageName: String? = null
 
@@ -62,6 +63,9 @@ class LimitInterventionManager(
         val now = currentTimeMillis()
         val retryAfter = retryAfterByPackage[packageName]
         val retryReady = retryAfter != null && now >= retryAfter
+        val lastTriggeredLimitSeconds = lastTriggeredLimitByPackage[packageName]
+            ?.takeIf { it.usageDayKey == usageDayKey }
+            ?.limitSeconds
         val shouldIntervene = evaluation.isLimitReached &&
             !overlayShowing &&
             (
@@ -71,11 +75,12 @@ class LimitInterventionManager(
                 )
         Log.d(
             TAG,
-            "packageName=$packageName " +
+            "DailyLimit: packageName=$packageName " +
                 "todayUsageSeconds=${evaluation.usedSeconds} " +
                 "baseLimitSeconds=$baseLimitSeconds " +
                 "extensionSeconds=${state.todayExtensionSeconds} " +
                 "effectiveLimitSeconds=${evaluation.limitSeconds} " +
+                "lastTriggeredLimitSeconds=$lastTriggeredLimitSeconds " +
                 "previousOverLimit=${triggerSnapshot.previousOverLimit} " +
                 "currentOverLimit=${triggerSnapshot.currentOverLimit} " +
                 "limitCrossed=${triggerSnapshot.limitCrossed} " +
@@ -98,6 +103,10 @@ class LimitInterventionManager(
         if (!shouldIntervene) return LimitInterventionDecision.None
 
         retryAfterByPackage.remove(packageName)
+        lastTriggeredLimitByPackage[packageName] = TriggeredLimit(
+            usageDayKey = usageDayKey,
+            limitSeconds = evaluation.limitSeconds,
+        )
         visiblePackageName = packageName
         Log.d(TAG, "interventionTriggered=true packageName=$packageName")
         return LimitInterventionDecision.Show(
@@ -112,30 +121,33 @@ class LimitInterventionManager(
                 exceededSeconds = (evaluation.usedSeconds - evaluation.limitSeconds)
                     .coerceAtLeast(0L),
                 currentSessionSeconds = currentSessionSeconds,
-                extensionsRemaining = (MAX_DAILY_EXTENSIONS - state.extensionsUsed)
-                    .coerceAtLeast(0),
                 extensionDurationSeconds = timeConfig.extensionDurationSeconds,
             ),
         )
     }
 
-    suspend fun grantConfiguredExtension(packageName: String): Boolean {
+    suspend fun grantConfiguredExtension(
+        packageName: String,
+        baseLimitSeconds: Long,
+    ): Boolean {
         if (visiblePackageName != packageName) return false
         val usageDayKey = usageDayProvider.currentUsageDay().key
+        val before = getState(packageName, usageDayKey)
         val state = repository.grantExtension(
             packageName = packageName,
             usageDayKey = usageDayKey,
             extensionSeconds = timeConfig.extensionDurationSeconds,
-            maxExtensions = MAX_DAILY_EXTENSIONS,
-        ) ?: return false
+        )
         stateCache[packageName] = state
         triggerState.onLimitExtended(packageName, usageDayKey)
         retryAfterByPackage.remove(packageName)
         visiblePackageName = null
         Log.d(
             TAG,
-            "limitExtended packageName=$packageName " +
-                "todayExtensionSeconds=${state.todayExtensionSeconds}",
+            "Extension: packageName=$packageName " +
+                "beforeExtension=${before.todayExtensionSeconds} " +
+                "afterExtension=${state.todayExtensionSeconds} " +
+                "newEffectiveLimit=${baseLimitSeconds + state.todayExtensionSeconds}",
         )
         return true
     }
@@ -147,6 +159,7 @@ class LimitInterventionManager(
 
     fun onDisplayFailed(packageName: String) {
         if (visiblePackageName == packageName) visiblePackageName = null
+        lastTriggeredLimitByPackage.remove(packageName)
         retryAfterByPackage[packageName] = currentTimeMillis() + DISPLAY_RETRY_DELAY_MILLIS
         Log.w(TAG, "intervention display failed; retry scheduled packageName=$packageName")
     }
@@ -161,6 +174,7 @@ class LimitInterventionManager(
 
     suspend fun removeApp(packageName: String) {
         stateCache.remove(packageName)
+        lastTriggeredLimitByPackage.remove(packageName)
         triggerState.remove(packageName)
         closeVisibleIntervention(packageName)
         repository.remove(packageName)
@@ -178,11 +192,15 @@ class LimitInterventionManager(
     }
 
     companion object {
-        const val MAX_DAILY_EXTENSIONS = 2
         private const val SECONDS_PER_MINUTE = 60L
         private const val DISPLAY_RETRY_DELAY_MILLIS = 5_000L
         private const val TAG = "LimitIntervention"
     }
+
+    private data class TriggeredLimit(
+        val usageDayKey: String,
+        val limitSeconds: Long,
+    )
 }
 
 internal class LimitInterventionTriggerState {

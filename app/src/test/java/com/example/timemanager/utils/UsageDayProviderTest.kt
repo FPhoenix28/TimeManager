@@ -2,6 +2,7 @@ package com.example.timemanager.utils
 
 import java.time.Clock
 import java.time.Instant
+import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
@@ -33,6 +34,23 @@ class UsageDayProviderTest {
         assertEquals(
             Instant.parse("2026-08-19T20:00:00Z").toEpochMilli(),
             usageDay.startTimeMillis,
+        )
+    }
+
+    @Test
+    fun historicalUsageDayRunsFromFourAmToNextFourAm() {
+        val provider = providerAt("2026-09-09T12:00:00+08:00")
+
+        val usageDay = provider.usageDay(LocalDate.parse("2026-09-08"))
+
+        assertEquals("2026-09-08", usageDay.key)
+        assertEquals(
+            Instant.parse("2026-09-07T20:00:00Z").toEpochMilli(),
+            usageDay.startTimeMillis,
+        )
+        assertEquals(
+            Instant.parse("2026-09-08T20:00:00Z").toEpochMilli(),
+            usageDay.endTimeMillis,
         )
     }
 

@@ -27,6 +27,7 @@ data class PermissionUiState(
     val usageAccessGranted: Boolean,
     val notificationGranted: Boolean,
     val overlayGranted: Boolean,
+    val accessibilityGranted: Boolean = false,
 ) {
     val allRequiredGranted: Boolean
         get() = usageAccessGranted && notificationGranted && overlayGranted
@@ -39,6 +40,7 @@ fun PermissionSettingsScreen(
     onRequestUsageAccess: () -> Unit,
     onRequestNotification: () -> Unit,
     onRequestOverlay: () -> Unit,
+    onRequestAccessibility: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     BackHandler(onBack = onBack)
@@ -67,7 +69,7 @@ fun PermissionSettingsScreen(
         }
         item {
             Text(
-                text = "这些权限用于统计使用时间、发送提醒和显示冷静页。权限状态会在返回应用后自动更新。",
+                text = "这些权限用于统计使用时间、发送提醒和显示冷静页。无障碍服务仅供专注与静心模式使用。返回应用后状态会自动更新。",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(
@@ -82,6 +84,8 @@ fun PermissionSettingsScreen(
                 onRequestUsageAccess = onRequestUsageAccess,
                 onRequestNotification = onRequestNotification,
                 onRequestOverlay = onRequestOverlay,
+                onRequestAccessibility = onRequestAccessibility,
+                showAccessibility = true,
             )
         }
     }
@@ -93,6 +97,8 @@ fun PermissionCards(
     onRequestUsageAccess: () -> Unit,
     onRequestNotification: () -> Unit,
     onRequestOverlay: () -> Unit,
+    onRequestAccessibility: () -> Unit = {},
+    showAccessibility: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -120,6 +126,15 @@ fun PermissionCards(
             actionLabel = "去开启",
             onAction = onRequestOverlay,
         )
+        if (showAccessibility) {
+            PermissionCard(
+                title = "无障碍服务",
+                description = "仅在专注或静心期间识别当前打开的应用，并按你启用的模式将受限应用带回桌面；不读取页面内容。",
+                granted = state.accessibilityGranted,
+                actionLabel = "去开启",
+                onAction = onRequestAccessibility,
+            )
+        }
     }
 }
 

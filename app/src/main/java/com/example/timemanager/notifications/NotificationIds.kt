@@ -8,6 +8,7 @@ object NotificationIds {
     const val LIMIT_WARNING_BASE = 10_000
     const val LIMIT_REACHED_BASE = 20_000
     const val SESSION_REMINDER_BASE = 30_000
+    const val DEEP_FOCUS = 40_001
 
     fun limitWarning(packageName: String): Int =
         LIMIT_WARNING_BASE + packageBucket(packageName, CATEGORY_RANGE)
