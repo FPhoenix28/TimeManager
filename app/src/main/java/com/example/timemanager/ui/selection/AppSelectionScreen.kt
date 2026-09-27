@@ -24,6 +24,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,8 +35,10 @@ import androidx.compose.ui.res.painterResource
 import com.example.timemanager.R
 import com.example.timemanager.data.model.TrackedApp
 import com.example.timemanager.ui.components.AppIcon
+import com.example.timemanager.ui.components.AppSearchField
 import com.example.timemanager.ui.components.FullScreenError
 import com.example.timemanager.ui.components.FullScreenLoading
+import com.example.timemanager.ui.components.matchesAppSearch
 import com.example.timemanager.ui.theme.TimeManagerSpacing
 
 @Composable
@@ -68,6 +74,10 @@ private fun AppSelectionList(
     onSelectApp: (String) -> Unit,
     modifier: Modifier,
 ) {
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    val filteredApps = remember(apps, searchQuery) {
+        apps.filter { matchesAppSearch(it.appName, it.packageName, searchQuery) }
+    }
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(
@@ -101,7 +111,24 @@ private fun AppSelectionList(
             }
         }
 
-        if (apps.isEmpty()) {
+        item("search") {
+            AppSearchField(
+                query = searchQuery,
+                onQueryChange = { searchQuery = it },
+                modifier = Modifier.padding(bottom = TimeManagerSpacing.small),
+            )
+        }
+
+        if (filteredApps.isEmpty() && searchQuery.isNotBlank()) {
+            item("noSearchResults") {
+                Text(
+                    "未找到相关应用",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = TimeManagerSpacing.extraLarge),
+                )
+            }
+        } else if (apps.isEmpty()) {
             item("empty") {
                 Text(
                     "没有找到可选择的用户应用",
@@ -111,7 +138,7 @@ private fun AppSelectionList(
                 )
             }
         } else {
-            items(items = apps, key = TrackedApp::packageName) { app ->
+            items(items = filteredApps, key = TrackedApp::packageName) { app ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()

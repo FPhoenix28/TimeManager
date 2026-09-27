@@ -24,12 +24,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import com.example.timemanager.ui.components.AppIcon
+import com.example.timemanager.ui.components.AppSearchField
+import com.example.timemanager.ui.components.matchesAppSearch
 import com.example.timemanager.ui.theme.TimeManagerSpacing
 
 @Composable
@@ -43,6 +46,10 @@ fun FocusSetupScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var showDisclosure by remember { mutableStateOf(false) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    val filteredApps = remember(state.apps, searchQuery) {
+        state.apps.filter { matchesAppSearch(it.appName, it.packageName, searchQuery) }
+    }
     BackHandler(onBack = onBack)
 
     LazyColumn(
@@ -102,10 +109,21 @@ fun FocusSetupScreen(
                 state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         }
+        item("search") {
+            AppSearchField(query = searchQuery, onQueryChange = { searchQuery = it })
+        }
         if (state.isLoadingApps) {
             item("loading") { Text("正在读取应用…") }
+        } else if (filteredApps.isEmpty() && searchQuery.isNotBlank()) {
+            item("noSearchResults") {
+                Text(
+                    "未找到相关应用",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         } else {
-            items(state.apps, key = { it.packageName }) { app ->
+            items(filteredApps, key = { it.packageName }) { app ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(TimeManagerSpacing.compact),
