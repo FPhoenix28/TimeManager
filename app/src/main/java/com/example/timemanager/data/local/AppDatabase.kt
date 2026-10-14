@@ -6,12 +6,13 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [UsageHistoryEntity::class],
-    version = 1,
+    entities = [UsageHistoryEntity::class, TodoEntity::class, TodoReminderReceiptEntity::class],
+    version = 2,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun usageHistoryDao(): UsageHistoryDao
+    abstract fun todoDao(): TodoDao
 
     companion object {
         @Volatile private var instance: AppDatabase? = null
@@ -21,7 +22,7 @@ abstract class AppDatabase : RoomDatabase() {
                 context.applicationContext,
                 AppDatabase::class.java,
                 "timemanager.db",
-            ).build().also { instance = it }
+            ).addMigrations(TodoMigration.MIGRATION_1_2).build().also { instance = it }
         }
     }
 }

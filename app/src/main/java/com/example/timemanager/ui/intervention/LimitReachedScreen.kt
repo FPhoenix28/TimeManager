@@ -6,15 +6,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -36,6 +33,7 @@ import com.example.timemanager.R
 import com.example.timemanager.data.model.InterventionType
 import com.example.timemanager.data.model.LimitInterventionRequest
 import com.example.timemanager.ui.theme.TimeManagerSpacing
+import com.example.timemanager.domain.todo.TodoSummary
 import kotlinx.coroutines.delay
 
 @Composable
@@ -43,75 +41,31 @@ fun LimitReachedScreen(
     request: LimitInterventionRequest,
     onExit: () -> Unit,
     onContinue: () -> Unit,
+    onCountdownFinished: () -> Unit = {},
+    todoSummary: TodoSummary = TodoSummary(),
 ) {
     when (request.type) {
         InterventionType.DAILY_LIMIT_REACHED -> DailyLimitReachedContent(
             request = request,
+            todoSummary = todoSummary,
             onExit = onExit,
             onContinue = onContinue,
         )
 
-        InterventionType.SESSION_REMINDER -> SessionReminderContent(
+        InterventionType.SESSION_REMINDER -> SessionFrictionContent(
             request = request,
-            onExit = onExit,
+            todoSummary = todoSummary,
+            onStayHome = onExit,
             onContinue = onContinue,
+            onCountdownFinished = onCountdownFinished,
         )
-    }
-}
-
-@Composable
-private fun SessionReminderContent(
-    request: LimitInterventionRequest,
-    onExit: () -> Unit,
-    onContinue: () -> Unit,
-) {
-    InterventionSurface(
-        iconRes = R.drawable.ic_session_pause,
-        iconDescription = "连续使用提醒",
-        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-    ) {
-        Text(
-            text = "已经连续使用一段时间",
-            style = MaterialTheme.typography.headlineSmall,
-            textAlign = TextAlign.Center,
-        )
-        Text(
-            text = "你已经连续使用${request.appName}",
-            style = MaterialTheme.typography.bodyLarge,
-            textAlign = TextAlign.Center,
-        )
-        Text(
-            text = formatShortDuration(request.currentSessionSeconds),
-            style = MaterialTheme.typography.displaySmall,
-        )
-        Text(
-            text = "可以稍微离开一下屏幕，再决定是否继续。",
-            style = MaterialTheme.typography.bodyMedium,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSecondaryContainer.copy(
-                alpha = SECONDARY_TEXT_ALPHA,
-            ),
-        )
-        Spacer(modifier = Modifier.height(TimeManagerSpacing.small))
-        Button(
-            onClick = onContinue,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("继续使用")
-        }
-        OutlinedButton(
-            onClick = onExit,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("退出应用")
-        }
     }
 }
 
 @Composable
 private fun DailyLimitReachedContent(
     request: LimitInterventionRequest,
+    todoSummary: TodoSummary,
     onExit: () -> Unit,
     onContinue: () -> Unit,
 ) {
@@ -128,122 +82,132 @@ private fun DailyLimitReachedContent(
     InterventionSurface(
         iconRes = R.drawable.ic_daily_limit,
         iconDescription = "每日额度提醒",
+        title = "今日额度已用完",
+        subtitle = "${request.appName}今天的可用时间已经用完",
         containerColor = MaterialTheme.colorScheme.errorContainer,
         contentColor = MaterialTheme.colorScheme.onErrorContainer,
-    ) {
-        Text(
-            text = "今日额度已用完",
-            style = MaterialTheme.typography.headlineSmall,
-            textAlign = TextAlign.Center,
-        )
-        Text(
-            text = "${request.appName}今天的可用时间已经用完",
-            style = MaterialTheme.typography.bodyLarge,
-            textAlign = TextAlign.Center,
-        )
-        Spacer(modifier = Modifier.height(TimeManagerSpacing.extraSmall))
-        Text(
-            text = "今日已使用",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onErrorContainer.copy(
-                alpha = SECONDARY_TEXT_ALPHA,
-            ),
-        )
-        Text(
-            text = formatDuration(request.todayUsageSeconds),
-            style = MaterialTheme.typography.displaySmall,
-        )
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.compact),
-        ) {
-            UsageLine("基础额度", formatDuration(request.baseLimitSeconds))
-            UsageLine("今日已延长", formatDuration(request.extensionSeconds))
-            UsageLine("当前有效额度", formatDuration(request.effectiveLimitSeconds))
-            if (request.exceededSeconds > 0L) {
-                UsageLine("已经超出", formatDuration(request.exceededSeconds))
-            }
-        }
-        Spacer(modifier = Modifier.height(TimeManagerSpacing.small))
-        if (waitSeconds > 0) {
+        mainContent = {
+            Spacer(modifier = Modifier.height(TimeManagerSpacing.extraSmall))
             Text(
-                text = "$waitSeconds 秒后可以选择延长使用",
-                style = MaterialTheme.typography.bodyMedium,
-                textAlign = TextAlign.Center,
+                text = "今日已使用",
+                style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onErrorContainer.copy(
                     alpha = SECONDARY_TEXT_ALPHA,
                 ),
             )
-        }
-        Button(
-            onClick = onContinue,
-            enabled = waitSeconds == 0,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.error,
-                contentColor = MaterialTheme.colorScheme.onError,
-            ),
-        ) {
-            Text("延长 ${formatShortDuration(request.extensionDurationSeconds)}")
-        }
-        OutlinedButton(
-            onClick = onExit,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("退出应用")
-        }
-    }
+            Text(
+                text = formatDuration(request.todayUsageSeconds),
+                style = MaterialTheme.typography.displaySmall,
+            )
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.compact),
+            ) {
+                UsageLine("基础额度", formatDuration(request.baseLimitSeconds))
+                UsageLine("今日已延长", formatDuration(request.extensionSeconds))
+                UsageLine("当前有效额度", formatDuration(request.effectiveLimitSeconds))
+                if (request.exceededSeconds > 0L) {
+                    UsageLine("已经超出", formatDuration(request.exceededSeconds))
+                }
+            }
+            TodoOverlaySummary(todoSummary)
+        },
+        actions = {
+            Spacer(modifier = Modifier.height(TimeManagerSpacing.small))
+            if (waitSeconds > 0) {
+                Text(
+                    text = "$waitSeconds 秒后可以选择延长使用",
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onErrorContainer.copy(
+                        alpha = SECONDARY_TEXT_ALPHA,
+                    ),
+                )
+            }
+            Button(
+                onClick = onContinue,
+                enabled = waitSeconds == 0,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError,
+                ),
+            ) {
+                Text("延长 ${formatShortDuration(request.extensionDurationSeconds)}")
+            }
+            OutlinedButton(onClick = onExit, modifier = Modifier.fillMaxWidth()) {
+                Text("退出应用")
+            }
+        },
+    )
 }
 
 @Composable
 private fun InterventionSurface(
     @DrawableRes iconRes: Int,
     iconDescription: String,
+    title: String,
+    subtitle: String,
     containerColor: Color,
     contentColor: Color,
-    content: @Composable ColumnScope.() -> Unit,
+    mainContent: @Composable ColumnScope.() -> Unit,
+    actions: @Composable ColumnScope.() -> Unit,
 ) {
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.scrim.copy(alpha = SCRIM_ALPHA),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(TimeManagerSpacing.large),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.extraLarge,
-                colors = CardDefaults.cardColors(
-                    containerColor = containerColor,
-                    contentColor = contentColor,
-                ),
-            ) {
-                Column(
-                    modifier = Modifier.padding(TimeManagerSpacing.large),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.compact),
+    ResponsiveInterventionScaffold(
+        containerColor = containerColor,
+        contentColor = contentColor,
+        scrimAlpha = SCRIM_ALPHA,
+        header = { isWide ->
+            if (isWide) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(TimeManagerSpacing.medium),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Surface(
-                        modifier = Modifier.size(ICON_CONTAINER_SIZE),
-                        shape = MaterialTheme.shapes.large,
-                        color = contentColor.copy(alpha = ICON_CONTAINER_ALPHA),
-                        contentColor = contentColor,
-                    ) {
-                        Icon(
-                            painter = painterResource(iconRes),
-                            contentDescription = iconDescription,
-                            modifier = Modifier.padding(TimeManagerSpacing.medium),
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(TimeManagerSpacing.extraSmall))
-                    content()
+                    InterventionIcon(iconRes, iconDescription, contentColor)
+                    InterventionHeading(title, subtitle, TextAlign.Start, Modifier.weight(1f))
                 }
+            } else {
+                InterventionIcon(iconRes, iconDescription, contentColor)
+                Spacer(modifier = Modifier.height(TimeManagerSpacing.extraSmall))
+                InterventionHeading(title, subtitle, TextAlign.Center)
             }
-        }
+        },
+        mainContent = mainContent,
+        actions = actions,
+    )
+}
+
+@Composable
+private fun InterventionIcon(@DrawableRes iconRes: Int, description: String, contentColor: Color) {
+    Surface(
+        modifier = Modifier.size(ICON_CONTAINER_SIZE),
+        shape = MaterialTheme.shapes.large,
+        color = contentColor.copy(alpha = ICON_CONTAINER_ALPHA),
+        contentColor = contentColor,
+    ) {
+        Icon(
+            painter = painterResource(iconRes),
+            contentDescription = description,
+            modifier = Modifier.padding(TimeManagerSpacing.medium),
+        )
+    }
+}
+
+@Composable
+private fun InterventionHeading(
+    title: String,
+    subtitle: String,
+    textAlign: TextAlign,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.compact),
+    ) {
+        Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = textAlign)
+        Text(subtitle, style = MaterialTheme.typography.bodyLarge, textAlign = textAlign)
     }
 }
 
@@ -257,10 +221,13 @@ private fun UsageLine(label: String, value: String) {
         Text(
             text = label,
             style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f),
         )
         Text(
             text = value,
             style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.weight(1f),
+            textAlign = TextAlign.End,
         )
     }
 }

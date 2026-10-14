@@ -12,6 +12,7 @@ data class LimitInterventionRequest(
     val currentSessionSeconds: Long,
     val extensionDurationSeconds: Long,
     val configuredSessionReminderSeconds: Long = 10L * 60L,
+    val sessionGate: SessionGate? = null,
 ) {
     companion object {
         fun sessionReminder(
@@ -20,6 +21,7 @@ data class LimitInterventionRequest(
             todayUsageSeconds: Long,
             currentSessionSeconds: Long,
             configuredReminderSeconds: Long,
+            gate: SessionGate,
         ) = LimitInterventionRequest(
             type = InterventionType.SESSION_REMINDER,
             packageName = packageName,
@@ -32,6 +34,7 @@ data class LimitInterventionRequest(
             currentSessionSeconds = currentSessionSeconds,
             extensionDurationSeconds = 0L,
             configuredSessionReminderSeconds = configuredReminderSeconds,
+            sessionGate = gate,
         )
     }
 }

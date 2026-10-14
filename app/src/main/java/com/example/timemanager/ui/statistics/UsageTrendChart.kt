@@ -52,14 +52,16 @@ fun UsageTrendChart(
 fun TrendComparisonText(
     changePercent: Double?,
     previousLabel: String,
+    explicitPeriod: Boolean = false,
     color: Color = MaterialTheme.colorScheme.onSurfaceVariant,
 ) {
+    val comparisonTarget = if (explicitPeriod) previousLabel else "上一周期"
     Text(
         text = when {
             changePercent == null -> "${previousLabel}无使用记录，暂无可比数据"
-            changePercent > 0.0 -> "↑ ${abs(changePercent).roundToInt()}% · 比上一周期增加"
-            changePercent < 0.0 -> "↓ ${abs(changePercent).roundToInt()}% · 比上一周期减少"
-            else -> "0% · 与上一周期持平"
+            changePercent > 0.0 -> "↑ ${abs(changePercent).roundToInt()}% · 比${comparisonTarget}增加"
+            changePercent < 0.0 -> "↓ ${abs(changePercent).roundToInt()}% · 比${comparisonTarget}减少"
+            else -> "0% · 与${comparisonTarget}持平"
         },
         color = color,
         style = MaterialTheme.typography.bodyMedium,

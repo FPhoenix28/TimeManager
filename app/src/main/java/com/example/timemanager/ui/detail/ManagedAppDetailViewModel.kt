@@ -14,6 +14,10 @@ import com.example.timemanager.data.repository.SessionSettingsRepository
 import com.example.timemanager.data.model.AppSessionSettings
 import com.example.timemanager.ui.limit.LimitEditorUiState
 import com.example.timemanager.utils.UsageDayProvider
+import com.example.timemanager.data.repository.UsageHistoryRepository
+import com.example.timemanager.data.local.UsageHistoryEntity
+import com.example.timemanager.domain.statistics.StatisticsCalculator
+import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,6 +36,7 @@ class ManagedAppDetailViewModel(
     private val interventionRepository: InterventionRepository,
     private val managedAppRepository: ManagedAppRepository,
     private val sessionSettingsRepository: SessionSettingsRepository,
+    private val historyRepository: UsageHistoryRepository,
     private val usageDayProvider: UsageDayProvider = UsageDayProvider(),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<ManagedAppDetailUiState>(
@@ -46,6 +51,7 @@ class ManagedAppDetailViewModel(
         val currentState = _uiState.value
         val hasMatchingContent = currentState is ManagedAppDetailUiState.Ready &&
             currentState.packageName == packageName
+        val historyEnd = LocalDate.parse(usageDayProvider.currentUsageDay().key)
         this.packageName = packageName
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
@@ -56,6 +62,9 @@ class ManagedAppDetailViewModel(
                 sessionSettingsRepository.observe(packageName),
             ) { trackedPackages: Set<String>, limit: AppLimit?, session: AppSessionSettings ->
                 DetailSources(packageName in trackedPackages, limit, session.reminderMinutes)
+            }.combine(historyRepository.observeAppHistory(packageName,
+                historyEnd.minusDays(13).toString(), historyEnd.toString())) { sources, records ->
+                sources.copy(historyRecords = records)
             }.collect { result: DetailSources ->
                     val isTracked = result.isTracked
                     val limit = result.limit
@@ -65,8 +74,16 @@ class ManagedAppDetailViewModel(
                     }
                     _uiState.value = runCatching {
                         withContext(Dispatchers.IO) {
-                            buildState(packageName, limit, result.sessionReminderMinutes)
+                            buildState(packageName, limit, result.sessionReminderMinutes, result.historyRecords, historyEnd)
                         }
+                    }.map { fresh ->
+                        val old = (_uiState.value as? ManagedAppDetailUiState.Ready)
+                            ?.takeIf { it.packageName == fresh.packageName }
+                        fresh.copy(
+                            editor = old?.editor?.takeIf { old.baseLimitSeconds == fresh.baseLimitSeconds },
+                            sessionEditor = old?.sessionEditor?.takeIf { old.sessionReminderMinutes == fresh.sessionReminderMinutes },
+                            isRemoving = old?.isRemoving == true,
+                        )
                     }.getOrElse { error ->
                         if (hasMatchingContent) _uiState.value else {
                             ManagedAppDetailUiState.Error(
@@ -227,6 +244,8 @@ class ManagedAppDetailViewModel(
         packageName: String,
         limit: AppLimit?,
         sessionReminderMinutes: Int,
+        historyRecords: List<UsageHistoryEntity>,
+        historyEnd: LocalDate,
     ): ManagedAppDetailUiState.Ready {
         val installedApp = installedAppRepository.getUserInstalledApp(packageName)
         val usageSeconds = usageTimeRepository.getTodayUsage(packageName)
@@ -236,6 +255,7 @@ class ManagedAppDetailViewModel(
         ).todayExtensionSeconds
         val baseSeconds = limit?.limitMinutes?.times(SECONDS_PER_MINUTE)
         val effectiveSeconds = baseSeconds?.plus(extensionSeconds)
+        val history = StatisticsCalculator().calculateApp(historyRecords, packageName, historyEnd, 7L)
         return ManagedAppDetailUiState.Ready(
             packageName = packageName,
             appName = installedApp?.appName ?: packageName,
@@ -253,6 +273,8 @@ class ManagedAppDetailViewModel(
                 ?.let { (usageSeconds - it).coerceAtLeast(0L) }
                 ?: 0L,
             sessionReminderMinutes = sessionReminderMinutes,
+            historyTotalSeconds = history.totalUsageSeconds,
+            historyChangePercent = history.changePercent,
             isOverLimit = effectiveSeconds != null && usageSeconds >= effectiveSeconds,
         )
     }
@@ -272,6 +294,7 @@ class ManagedAppDetailViewModel(
         private val interventionRepository: InterventionRepository,
         private val managedAppRepository: ManagedAppRepository,
         private val sessionSettingsRepository: SessionSettingsRepository,
+        private val historyRepository: UsageHistoryRepository,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -284,6 +307,7 @@ class ManagedAppDetailViewModel(
                     interventionRepository,
                     managedAppRepository,
                     sessionSettingsRepository,
+                    historyRepository,
                 ) as T
             }
             throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
@@ -299,5 +323,6 @@ class ManagedAppDetailViewModel(
         val isTracked: Boolean,
         val limit: AppLimit?,
         val sessionReminderMinutes: Int,
+        val historyRecords: List<UsageHistoryEntity> = emptyList(),
     )
 }

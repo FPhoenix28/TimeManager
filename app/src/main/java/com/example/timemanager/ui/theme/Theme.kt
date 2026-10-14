@@ -94,6 +94,10 @@ private val DarkColorScheme = darkColorScheme(
     surface = SurfaceDark,
     onSurface = OnSurfaceDark,
     surfaceVariant = SurfaceVariantDark,
+    surfaceContainer = Color(0xFF191B24),
+    surfaceContainerLow = Color(0xFF15171E),
+    surfaceContainerHigh = Color(0xFF252833),
+    surfaceContainerHighest = Color(0xFF343743),
     onSurfaceVariant = OnSurfaceVariantDark,
     outline = OutlineDark,
     outlineVariant = OutlineVariantDark,
@@ -106,7 +110,7 @@ private val DarkColorScheme = darkColorScheme(
 @Composable
 fun TimeManagerTheme(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
-    dynamicColor: Boolean = true,
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val useDarkTheme = when (themeMode) {

@@ -23,6 +23,8 @@ sealed interface ManagedAppDetailUiState {
         val exceededSeconds: Long,
         val sessionReminderMinutes: Int,
         val isOverLimit: Boolean,
+        val historyTotalSeconds: Long = 0L,
+        val historyChangePercent: Double? = null,
         val editor: LimitEditorUiState? = null,
         val sessionEditor: SessionReminderEditorUiState? = null,
         val isRemoving: Boolean = false,

@@ -164,10 +164,11 @@ class LimitInterventionManager(
         Log.w(TAG, "intervention display failed; retry scheduled packageName=$packageName")
     }
 
-    fun onAppLeft(packageName: String): Boolean {
+    fun onAppLeft(packageName: String, keepVisibleIntervention: Boolean = false): Boolean {
         retryAfterByPackage.remove(packageName)
         triggerState.onAppLeft(packageName)
-        val wasVisible = visiblePackageName == packageName
+        // HOME ends real usage, not the user's still-visible allowance decision.
+        val wasVisible = visiblePackageName == packageName && !keepVisibleIntervention
         if (wasVisible) visiblePackageName = null
         return wasVisible
     }

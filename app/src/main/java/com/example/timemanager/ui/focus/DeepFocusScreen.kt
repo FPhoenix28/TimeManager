@@ -8,20 +8,19 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -39,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.timemanager.data.model.FocusModeState
 import com.example.timemanager.data.model.FocusModeType
+import com.example.timemanager.ui.intervention.ResponsiveInterventionScaffold
 import com.example.timemanager.ui.theme.TimeManagerSpacing
 import java.text.DateFormat
 import java.util.Date
@@ -90,7 +90,9 @@ fun DeepFocusContent(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = TimeManagerSpacing.extraLarge),
+                    .safeDrawingPadding()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = TimeManagerSpacing.extraLarge, vertical = TimeManagerSpacing.large),
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
@@ -164,44 +166,32 @@ fun DeepFocusContent(
 
         if (showEndConfirmation) {
             val remainingMinutes = (focus.remainingMillis() + 59_999L) / 60_000L
-            Box(
+            ResponsiveInterventionScaffold(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.42f))
                     .pointerInput(Unit) { detectTapGestures(onTap = {}) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = TimeManagerSpacing.extraLarge)
-                        .widthIn(max = 360.dp),
-                    shape = MaterialTheme.shapes.extraLarge,
-                    tonalElevation = 6.dp,
-                ) {
-                    Column(modifier = Modifier.padding(TimeManagerSpacing.large)) {
-                        Text("确定提前结束吗？", style = MaterialTheme.typography.headlineSmall)
-                        Spacer(Modifier.height(TimeManagerSpacing.medium))
-                        Text(
-                            "静心还有约 $remainingMinutes 分钟。",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        Spacer(Modifier.height(TimeManagerSpacing.large))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End,
-                        ) {
-                            TextButton(onClick = {
-                                showEndConfirmation = false
-                                onEndConfirmed()
-                            }) { Text("结束静心") }
-                            Button(onClick = { showEndConfirmation = false }) {
-                                Text("继续静心")
-                            }
-                        }
-                    }
-                }
-            }
+                scrimAlpha = 0.42f,
+                portraitMaxWidth = 360.dp,
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                header = { Text("确定提前结束吗？", style = MaterialTheme.typography.headlineSmall) },
+                mainContent = {
+                    Text("静心还有约 $remainingMinutes 分钟。", style = MaterialTheme.typography.bodyMedium)
+                },
+                actions = {
+                    Button(
+                        onClick = { showEndConfirmation = false },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("继续静心") }
+                    TextButton(
+                        onClick = {
+                            showEndConfirmation = false
+                            onEndConfirmed()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("结束静心") }
+                },
+            )
         }
     }
 }

@@ -37,10 +37,12 @@ fun DeepFocusSetupScreen(
     onStarted: () -> Unit,
     onRequestAccessibility: () -> Unit,
     onRequestOverlay: () -> Unit,
+    onCheckAccessibility: () -> Boolean,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var showStartConfirmation by remember { mutableStateOf(false) }
+    var showPermissionExplanation by remember { mutableStateOf(false) }
     BackHandler(onBack = onBack)
 
     LazyColumn(
@@ -89,10 +91,10 @@ fun DeepFocusSetupScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.small)) {
                     if (!accessibilityEnabled) {
                         Text(
-                            "无障碍服务未开启，静心模式无法阻止其它应用。",
+                            "静心模式需要开启无障碍服务才能暂时阻止其它应用。",
                             color = MaterialTheme.colorScheme.error,
                         )
-                        OutlinedButton(onClick = onRequestAccessibility) { Text("开启无障碍服务") }
+                        OutlinedButton(onClick = onRequestAccessibility) { Text("前往开启") }
                     }
                     if (!overlayEnabled) {
                         Text(
@@ -108,8 +110,8 @@ fun DeepFocusSetupScreen(
         item("start") {
             Button(
                 onClick = {
-                    if (accessibilityEnabled) showStartConfirmation = true
-                    else onRequestAccessibility()
+                    if (onCheckAccessibility()) showStartConfirmation = true
+                    else showPermissionExplanation = true
                 },
                 enabled = state.canStart,
                 modifier = Modifier.fillMaxWidth(),
@@ -137,12 +139,26 @@ fun DeepFocusSetupScreen(
             confirmButton = {
                 TextButton(onClick = {
                     showStartConfirmation = false
-                    viewModel.startDeepFocus(replacesFocus, onStarted)
+                    if (onCheckAccessibility()) viewModel.startDeepFocus(replacesFocus, onStarted)
+                    else showPermissionExplanation = true
                 }) { Text("开始") }
             },
             dismissButton = {
                 TextButton(onClick = { showStartConfirmation = false }) { Text("取消") }
             },
+        )
+    }
+    if (showPermissionExplanation) {
+        AlertDialog(
+            onDismissRequest = { showPermissionExplanation = false },
+            title = { Text("启用静心干预") },
+            text = { Text("静心模式需要开启无障碍服务才能暂时阻止其它应用。开启后再开始静心。") },
+            confirmButton = {
+                TextButton(onClick = { showPermissionExplanation = false; onRequestAccessibility() }) {
+                    Text("前往开启")
+                }
+            },
+            dismissButton = { TextButton(onClick = { showPermissionExplanation = false }) { Text("取消") } },
         )
     }
 }

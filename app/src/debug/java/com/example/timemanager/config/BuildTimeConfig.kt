@@ -21,5 +21,7 @@ object BuildTimeConfig {
         firstSessionReminderSeconds = 15L,
         secondSessionReminderSeconds = 30L,
         extensionDurationSeconds = 30L,
+        frictionResetIdleSeconds = 30L,
+        sessionInterventionOverrideSeconds = 20L,
     )
 }

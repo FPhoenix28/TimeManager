@@ -42,6 +42,7 @@ fun FocusSetupScreen(
     onBack: () -> Unit,
     onStarted: () -> Unit,
     onRequestAccessibility: () -> Unit,
+    onCheckAccessibility: () -> Boolean,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -101,7 +102,7 @@ fun FocusSetupScreen(
                 }
                 if (!accessibilityEnabled) {
                     Text(
-                        "无障碍服务未开启；开始专注前需要授权。",
+                        "专注模式需要开启无障碍服务才能阻止选中的应用。",
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodyMedium,
                     )
@@ -151,7 +152,7 @@ fun FocusSetupScreen(
         item("start") {
             Button(
                 onClick = {
-                    if (accessibilityEnabled) viewModel.startFocus(onStarted)
+                    if (onCheckAccessibility()) viewModel.startFocus(onStarted)
                     else showDisclosure = true
                 },
                 enabled = state.canStart,
@@ -163,19 +164,18 @@ fun FocusSetupScreen(
     if (showDisclosure) {
         AlertDialog(
             onDismissRequest = { showDisclosure = false },
-            title = { Text("开启专注所需的权限") },
+            title = { Text("启用专注干预") },
             text = {
                 Text(
-                    "TimeManager 的无障碍服务会接收应用窗口切换事件，识别当前打开的应用；" +
-                        "专注期间遇到你选中的应用时，会将你带回桌面并显示提示。" +
-                        "它不读取页面内容，也不上传这些事件。请在系统设置中手动开启。",
+                    "专注模式需要开启无障碍服务才能阻止选中的应用。\n\n" +
+                        "仅识别前台应用，不读取页面内容，也不上传这些信息。",
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
                     showDisclosure = false
                     onRequestAccessibility()
-                }) { Text("了解，前往设置") }
+                }) { Text("前往开启") }
             },
             dismissButton = {
                 TextButton(onClick = { showDisclosure = false }) { Text("取消") }

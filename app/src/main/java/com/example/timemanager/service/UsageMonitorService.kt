@@ -11,6 +11,15 @@ import com.example.timemanager.data.model.ForegroundApp
 import com.example.timemanager.data.local.AppDatabase
 import com.example.timemanager.config.BuildTimeConfig
 import com.example.timemanager.config.TimeConfig
+import com.example.timemanager.config.InterventionRuntime
+import com.example.timemanager.domain.intervention.DailyLimitSnapshot
+import com.example.timemanager.domain.intervention.EntryCheckResult
+import com.example.timemanager.domain.intervention.InterventionPriority
+import com.example.timemanager.domain.intervention.MonitorInterventionCommand
+import com.example.timemanager.domain.intervention.SessionReminderMode
+import com.example.timemanager.permissions.PermissionHealthManager
+import com.example.timemanager.data.model.SessionGatePhase
+import com.example.timemanager.data.repository.InstalledAppInfoProvider
 import com.example.timemanager.data.preferences.AppLimitPreferences
 import com.example.timemanager.data.preferences.InterventionPreferences
 import com.example.timemanager.data.preferences.NotificationStatePreferences
@@ -52,10 +61,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.first
 
 /** User-visible foreground service that owns the foreground-app monitoring loop. */
 class UsageMonitorService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val coordinator = InterventionRuntime.coordinator
+    private val friction get() = coordinator.friction
+    private val permissionHealthManager by lazy { PermissionHealthManager.get(applicationContext) }
     private lateinit var foregroundAppDetector: ForegroundAppDetector
     private lateinit var appTimer: AppTimer
     private lateinit var notificationHelper: MonitorNotificationHelper
@@ -76,6 +90,10 @@ class UsageMonitorService : Service() {
     private var trackedAppsJob: Job? = null
     private var limitsJob: Job? = null
     private var sessionSettingsJob: Job? = null
+    private var interventionCommandsJob: Job? = null
+    private var permissionHealthJob: Job? = null
+    private var trackedAppsLoaded = false
+    private var limitsLoaded = false
     private var currentForegroundApp: ForegroundApp? = null
     private var timedForegroundApp: ForegroundApp? = null
     private var trackedPackageNames: Set<String> = emptySet()
@@ -83,12 +101,14 @@ class UsageMonitorService : Service() {
     private var sessionReminderMinutesByPackage: Map<String, Int> = emptyMap()
     private var activeInterventionType: InterventionType? = null
     private var activeInterventionPackageName: String? = null
+    private var activeInterventionRequest: LimitInterventionRequest? = null
     private var lastIdleUsageDayKey: String? = null
     private var lastIdleTrackedPackages: Set<String> = emptySet()
     private val timingMutex = Mutex()
 
     override fun onCreate() {
         super.onCreate()
+        permissionHealthManager.refresh()
         notificationHelper = MonitorNotificationHelper(applicationContext)
         startAsForegroundService()
         foregroundAppDetector = ForegroundAppDetector(applicationContext)
@@ -139,11 +159,14 @@ class UsageMonitorService : Service() {
         observeTrackedApps()
         observeLimits()
         observeSessionSettings()
+        observeInterventionCommands()
+        observePermissionHealth()
         startDetection()
         Log.d(TAG, "Usage monitor service started.")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        permissionHealthManager.refresh()
         startDetection()
         return START_STICKY
     }
@@ -153,6 +176,8 @@ class UsageMonitorService : Service() {
         trackedAppsJob?.cancel()
         limitsJob?.cancel()
         sessionSettingsJob?.cancel()
+        interventionCommandsJob?.cancel()
+        permissionHealthJob?.cancel()
         val finalTimerState = appTimer.finishCurrentSession()
         sessionTracker.endSession()
         runBlocking(Dispatchers.IO) {
@@ -162,6 +187,7 @@ class UsageMonitorService : Service() {
         runBlocking {
             interventionOverlayController.dismiss()
         }
+        coordinator.monitorStopped()
         serviceScope.cancel()
         Log.d(TAG, "Usage monitor service stopped.")
         super.onDestroy()
@@ -176,25 +202,39 @@ class UsageMonitorService : Service() {
             var queryStartTime = System.currentTimeMillis() - INITIAL_LOOKBACK_MILLIS
 
             while (isActive) {
-                val now = System.currentTimeMillis()
-                foregroundAppDetector.detect(queryStartTime, now)?.let(::handleDetectedApp)
-                if (!powerManager.isInteractive) {
-                    currentForegroundApp = null
-                    timingMutex.withLock {
-                        if (timedForegroundApp != null) {
-                            finishTrackedSession()
-                        } else {
-                            updateIdleNotificationIfNeeded()
-                        }
-                    }
-                } else {
-                    currentForegroundApp?.let { foregroundApp ->
+                try {
+                    val now = System.currentTimeMillis()
+                    foregroundAppDetector.detect(queryStartTime, now)?.let(::handleDetectedApp)
+                    if (!powerManager.isInteractive) {
+                        currentForegroundApp = null
                         timingMutex.withLock {
-                            processForegroundApp(foregroundApp)
+                            if (timedForegroundApp != null) {
+                                finishTrackedSession()
+                            } else {
+                                updateIdleNotificationIfNeeded()
+                            }
+                        }
+                    } else {
+                        timingMutex.withLock {
+                            val expired = friction.expireIdleEpisodes()
+                            if (activeInterventionPackageName in expired) dismissActiveIntervention()
+                            currentForegroundApp?.let { foregroundApp ->
+                                if (timedForegroundApp != null &&
+                                    !coordinator.canTime(checkNotNull(timedForegroundApp).packageName)
+                                ) finishTrackedSession()
+                                processForegroundApp(foregroundApp)
+                            }
                         }
                     }
+                    queryStartTime = now - EVENT_OVERLAP_MILLIS
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    val pkg = timedForegroundApp?.packageName ?: activeInterventionPackageName
+                    pkg?.let { friction.failOpen(it); coordinator.suppressCurrentVisit(it) }
+                    timingMutex.withLock { dismissActiveIntervention() }
+                    Log.e(TAG, "intervention failed but monitoring continues", error)
                 }
-                queryStartTime = now - EVENT_OVERLAP_MILLIS
                 delay(DETECTION_INTERVAL_MILLIS)
             }
         }
@@ -204,12 +244,15 @@ class UsageMonitorService : Service() {
         if (trackedAppsJob?.isActive == true) return
         trackedAppsJob = serviceScope.launch {
             trackedAppRepository.observeTrackedPackageNames().collect { packageNames ->
-                trackedPackageNames = packageNames
                 timingMutex.withLock {
+                    trackedPackageNames = packageNames
+                    trackedAppsLoaded = true
                     val timedApp = timedForegroundApp
                     if (timedApp != null && timedApp.packageName !in packageNames) {
                         finishTrackedSession()
                     }
+                    if (activeInterventionPackageName !in packageNames) dismissActiveIntervention()
+                    coordinator.updateManagedPackages(packageNames)
                 }
                 Log.d(TAG, "Tracked apps updated: ${packageNames.size}")
             }
@@ -217,176 +260,105 @@ class UsageMonitorService : Service() {
     }
 
     private suspend fun processForegroundApp(foregroundApp: ForegroundApp) {
-        if (foregroundApp.packageName !in trackedPackageNames) {
-            if (timedForegroundApp != null) {
-                finishTrackedSession()
-            } else {
-                updateIdleNotificationIfNeeded()
-            }
+        if (!permissionHealthManager.state.value.usageAccessGranted) {
+            if (timedForegroundApp != null) finishTrackedSession()
             return
         }
-
-        val previousTimedApp = timedForegroundApp
-        val isNewSession = previousTimedApp?.packageName != foregroundApp.packageName
-        if (previousTimedApp != null && isNewSession) {
-            if (interventionManager.onAppLeft(previousTimedApp.packageName)) {
-                interventionOverlayController.dismiss()
-                clearActiveIntervention()
-            } else if (activeInterventionPackageName == previousTimedApp.packageName) {
-                interventionOverlayController.dismiss()
-                clearActiveIntervention()
-            }
+        val pkg = foregroundApp.packageName
+        if (pkg !in trackedPackageNames) {
+            if (timedForegroundApp != null) finishTrackedSession()
+            else updateIdleNotificationIfNeeded()
+            return
         }
+        if (!coordinator.canTime(pkg)) return
+        val isNewSession = timedForegroundApp?.packageName != pkg
+        if (isNewSession && timedForegroundApp != null) finishTrackedSession()
+        val configuredSeconds = configuredReminderSeconds(pkg)
         if (isNewSession) {
-            interventionManager.onManagedAppEntered(foregroundApp.packageName)
+            interventionManager.onManagedAppEntered(pkg)
+        }
+        // Accessibility disconnect clears runtime admission; retain the existing AppTimer clock.
+        if (isNewSession || friction.snapshot(pkg) == null) {
+            friction.beginPhysicalSession(pkg, configuredSeconds)
+        } else {
+            friction.updateFirstReminder(pkg, configuredSeconds)
         }
         val timerState = appTimer.update(foregroundApp)
-        val configuredReminderSeconds = (
-            sessionReminderMinutesByPackage[foregroundApp.packageName]
-                ?: SessionSettingsRepository.DEFAULT_REMINDER_MINUTES
-            ) * SECONDS_PER_MINUTE
-        val sessionProgress = sessionTracker.evaluateSessionIntervention(
-            timerState = timerState,
-            configuredReminderSeconds = configuredReminderSeconds,
-        )
-        val sessionDue = sessionProgress.isDue
-        val diagnosticTick =
-            timerState.currentSessionSeconds % DIAGNOSTIC_LOG_INTERVAL_SECONDS == 0L
+        friction.onActualUsage(pkg, timerState.currentSessionSeconds)
+        val episode = friction.snapshot(pkg)
+        val sessionDue = friction.isReminderDue(pkg)
         sessionTracker.update(timerState)?.let { reminder ->
-            alertNotificationHelper.sendSessionReminder(
-                packageName = foregroundApp.packageName,
-                appName = foregroundApp.appName,
-                reminder = reminder,
-            )
+            alertNotificationHelper.sendSessionReminder(pkg, foregroundApp.appName, reminder)
         }
         timedForegroundApp = foregroundApp
         lastIdleUsageDayKey = null
         lastIdleTrackedPackages = emptySet()
         val todayUsageSeconds = usageTimeRepository.recordTimerState(timerState)
-        val baseLimitMinutes = limitMinutesByPackage[foregroundApp.packageName]
-        val effectiveLimit = baseLimitMinutes?.let { baseLimit ->
-            interventionManager.getEffectiveLimit(
-                packageName = foregroundApp.packageName,
-                baseDailyLimitMinutes = baseLimit,
-            )
+        val effectiveLimit = limitMinutesByPackage[pkg]?.let {
+            interventionManager.getEffectiveLimit(pkg, it)
         }
-        val limitEvaluation = effectiveLimit?.let { limit ->
-            limitEvaluator.evaluateSeconds(
-                packageName = foregroundApp.packageName,
-                todayUsageSeconds = todayUsageSeconds,
-                limitSeconds = limit.effectiveLimitSeconds,
-            )
+        val evaluation = effectiveLimit?.let {
+            limitEvaluator.evaluateSeconds(pkg, todayUsageSeconds, it.effectiveLimitSeconds)
         }
-        if (
-            baseLimitMinutes != null &&
-            effectiveLimit != null &&
-            limitEvaluation != null &&
-            (diagnosticTick || isNewSession)
-        ) {
-            Log.d(
-                USAGE_LIMIT_EVALUATOR_TAG,
-                "packageName=${foregroundApp.packageName} " +
-                    "observedLimitMinutes=$baseLimitMinutes " +
-                    "baseLimitSeconds=${effectiveLimit.baseLimitSeconds} " +
-                    "extensionSeconds=${effectiveLimit.todayExtensionSeconds} " +
-                    "effectiveLimitSeconds=${effectiveLimit.effectiveLimitSeconds} " +
-                    "todayUsageSeconds=$todayUsageSeconds " +
-                    "isOverLimit=${limitEvaluation.isLimitReached}",
-            )
-        }
-        var dailyLimitTriggered = false
-        if (limitEvaluation != null) {
-            usageLimitNotifier.notifyIfNeeded(foregroundApp.appName, limitEvaluation)
-        } else if (interventionManager.onAppLeft(foregroundApp.packageName)) {
-            interventionOverlayController.dismiss()
-        }
-        val foregroundNotificationUpdated = notificationHelper.updateRunningNotification(
-            timerState = timerState,
-            todayUsageSeconds = todayUsageSeconds,
-            limitEvaluation = limitEvaluation,
-        )
-        if (limitEvaluation != null) {
-            if (diagnosticTick || isNewSession) {
-                Log.d(
-                    TAG,
-                    "packageName=${foregroundApp.packageName} managed=true " +
-                        "todayUsageSeconds=$todayUsageSeconds " +
-                        "baseLimitSeconds=${effectiveLimit?.baseLimitSeconds} " +
-                        "todayExtensionSeconds=${effectiveLimit?.todayExtensionSeconds} " +
-                        "effectiveLimitSeconds=${limitEvaluation.limitSeconds} " +
-                        "isOverLimit=${limitEvaluation.isLimitReached} " +
-                        "foregroundServiceRunning=true " +
-                        "foregroundNotificationUpdated=$foregroundNotificationUpdated",
-                )
-            }
+        coordinator.publishDaily(pkg, DailyLimitSnapshot(
+            usageDayProvider.currentUsageDay().key, todayUsageSeconds, effectiveLimit?.effectiveLimitSeconds,
+            evaluation?.isLimitReached == true,
+        ))
+        evaluation?.let { usageLimitNotifier.notifyIfNeeded(foregroundApp.appName, it) }
+        val notificationUpdated = notificationHelper.updateRunningNotification(timerState, todayUsageSeconds, evaluation)
+        var dailyTriggered = false
+        if (evaluation != null && coordinator.enhancedInterventionsAllowed(pkg)) {
             val decision = interventionManager.evaluate(
-                appName = foregroundApp.appName,
-                evaluation = limitEvaluation,
-                baseLimitSeconds = checkNotNull(effectiveLimit).baseLimitSeconds,
-                currentSessionSeconds = timerState.currentSessionSeconds,
-                isNewSession = isNewSession,
+                foregroundApp.appName, evaluation, checkNotNull(effectiveLimit).baseLimitSeconds,
+                timerState.currentSessionSeconds, isNewSession,
             )
-            dailyLimitTriggered = decision is LimitInterventionDecision.Show
-            try {
-                handleInterventionDecision(decision)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                val failedPackageName = (decision as? LimitInterventionDecision.Show)
-                    ?.request
-                    ?.packageName
-                failedPackageName?.let(interventionManager::onDisplayFailed)
-                Log.e(TAG, "intervention failed but monitoring continues", error)
-            }
+            dailyTriggered = decision is LimitInterventionDecision.Show
+            handleInterventionDecision(decision)
+        } else if (activeInterventionType == InterventionType.DAILY_LIMIT_REACHED &&
+            activeInterventionPackageName == pkg && evaluation?.isLimitReached != true
+        ) {
+            dismissActiveIntervention()
         }
-        val selectedIntervention = selectInterventionType(
-            dailyLimitTriggered = dailyLimitTriggered,
-            sessionDue = sessionDue,
-            overlayShowing = interventionOverlayController.isShowing(),
+        val selected = selectInterventionType(
+            dailyLimitTriggered = dailyTriggered || (evaluation?.isLimitReached == true &&
+                coordinator.enhancedInterventionsAllowed(pkg)),
+            sessionDue = sessionDue && permissionHealthManager.state.value.canShowSessionReminder &&
+                coordinator.interventionsAllowed(pkg),
+            overlayShowing = coordinator.hasOverlay(),
         )
-        var sessionInterventionShown = false
-        var progressAfterDisplay = sessionProgress
-        if (selectedIntervention == InterventionType.SESSION_REMINDER) {
-            sessionInterventionShown = showSessionIntervention(
-                LimitInterventionRequest.sessionReminder(
-                    packageName = foregroundApp.packageName,
-                    appName = foregroundApp.appName,
-                    todayUsageSeconds = todayUsageSeconds,
-                    currentSessionSeconds = timerState.currentSessionSeconds,
-                    configuredReminderSeconds = configuredReminderSeconds,
-                ),
+        val didTrigger = if (selected == InterventionType.SESSION_REMINDER) {
+            showSessionGate(foregroundApp, SessionGatePhase.REMINDER, todayUsageSeconds)
+        } else false
+        if (isNewSession || sessionDue || timerState.currentSessionSeconds % DIAGNOSTIC_LOG_INTERVAL_SECONDS == 0L) {
+            Log.d(SESSION_TRACKER_TAG,
+                "SessionReminder: pkg=$pkg physicalSeconds=${timerState.currentSessionSeconds} " +
+                    "episodeSeconds=${episode?.episodeUsageSeconds} first=${episode?.firstReminderSeconds} " +
+                    "count=${episode?.reminderCount} next=${episode?.nextReminderAtSeconds} " +
+                    "type=$selected overlayVisible=${coordinator.hasOverlay()} didTrigger=$didTrigger",
             )
-            if (sessionInterventionShown) {
-                progressAfterDisplay = sessionTracker.onSessionInterventionShown(
-                    foregroundApp.packageName,
-                )
-            }
+            Log.d(TAG, "foregroundServiceRunning=true foregroundNotificationUpdated=$notificationUpdated " +
+                "pkg=$pkg todayUsageSeconds=$todayUsageSeconds effectiveLimitSeconds=${evaluation?.limitSeconds}")
         }
-        if (diagnosticTick || sessionDue || selectedIntervention != null || isNewSession) {
-            Log.d(
-                SESSION_TRACKER_TAG,
-                "SessionReminder: " +
-                    "packageName=${foregroundApp.packageName} " +
-                    "currentSessionSeconds=${timerState.currentSessionSeconds} " +
-                    "firstReminderSeconds=${sessionProgress.firstReminderSeconds} " +
-                    "reminderCount=${sessionProgress.reminderCount} " +
-                    "nextReminderAtSeconds=${sessionProgress.nextReminderAtSeconds} " +
-                    "nextAfterDisplaySeconds=${progressAfterDisplay.nextReminderAtSeconds} " +
-                    "interventionType=$selectedIntervention " +
-                    "overlayVisible=${interventionOverlayController.isShowing()} " +
-                    "didTrigger=$sessionInterventionShown",
+    }
+
+    private fun configuredReminderSeconds(packageName: String): Long =
+        timeConfig.sessionInterventionOverrideSeconds ?: (
+            (sessionReminderMinutesByPackage[packageName] ?: SessionSettingsRepository.DEFAULT_REMINDER_MINUTES) *
+                SECONDS_PER_MINUTE
             )
-            Log.d(
-                INTERVENTION_TAG,
-                "InterventionType=$selectedIntervention " +
-                    "packageName=${foregroundApp.packageName} " +
-                    "sessionSeconds=${timerState.currentSessionSeconds} " +
-                    "todayUsageSeconds=$todayUsageSeconds " +
-                    "dailyLimitSeconds=${limitEvaluation?.limitSeconds} " +
-                    "sessionDue=$sessionDue " +
-                    "dailyLimitTriggered=$dailyLimitTriggered " +
-                    "selectedIntervention=$selectedIntervention",
-            )
+
+    private fun observePermissionHealth() {
+        permissionHealthJob = serviceScope.launch {
+            permissionHealthManager.state.collect { health ->
+                timingMutex.withLock {
+                    if (!health.usageAccessGranted && timedForegroundApp != null) finishTrackedSession()
+                    if (!health.canShowSessionReminder ||
+                        (!health.accessibilityGranted &&
+                            (activeInterventionType == InterventionType.DAILY_LIMIT_REACHED ||
+                                activeInterventionRequest?.sessionGate?.phase == SessionGatePhase.REENTRY))
+                    ) dismissActiveIntervention()
+                }
+            }
         }
     }
 
@@ -394,8 +366,11 @@ class UsageMonitorService : Service() {
         if (limitsJob?.isActive == true) return
         limitsJob = serviceScope.launch {
             limitRepository.observeAllLimits().collect { limits ->
-                limitMinutesByPackage = limits.associate { limit ->
-                    limit.packageName to limit.limitMinutes
+                timingMutex.withLock {
+                    limitMinutesByPackage = limits.associate { limit ->
+                        limit.packageName to limit.limitMinutes
+                    }
+                    limitsLoaded = true
                 }
                 Log.d(TAG, "App limits updated: ${limits.size}")
                 limits.forEach { limit ->
@@ -413,175 +388,358 @@ class UsageMonitorService : Service() {
         if (sessionSettingsJob?.isActive == true) return
         sessionSettingsJob = serviceScope.launch {
             sessionSettingsRepository.observeStoredSettings().collect { settings ->
-                sessionReminderMinutesByPackage = settings
+                timingMutex.withLock { sessionReminderMinutesByPackage = settings }
                 Log.d(SESSION_TRACKER_TAG, "session settings updated count=${settings.size}")
             }
         }
     }
 
-    private suspend fun finishTrackedSession() {
-        val finalTimerState = appTimer.finishCurrentSession()
-        if (finalTimerState != null) {
-            if (interventionManager.onAppLeft(finalTimerState.packageName)) {
-                interventionOverlayController.dismiss()
-                clearActiveIntervention()
-            } else if (activeInterventionPackageName == finalTimerState.packageName) {
-                interventionOverlayController.dismiss()
-                clearActiveIntervention()
+    private suspend fun finishTrackedSession(keepIntervention: Boolean = activeInterventionType != null) {
+        val finalState = appTimer.finishCurrentSession()
+        finalState?.let {
+            friction.endPhysicalSession(it.packageName, it.currentSessionSeconds)
+            interventionManager.onAppLeft(it.packageName, keepVisibleIntervention = keepIntervention)
+            val usage = usageTimeRepository.recordTimerState(it)
+            coordinator.dailySnapshot(it.packageName)?.let { snapshot ->
+                if (snapshot.usageDayKey == usageDayProvider.currentUsageDay().key) {
+                    val over = snapshot.effectiveLimitSeconds?.let { limit ->
+                        limitEvaluator.evaluateSeconds(it.packageName, usage, limit).isLimitReached
+                    } == true
+                    coordinator.publishDaily(it.packageName, snapshot.copy(usedSeconds = usage, isOverLimit = over))
+                }
             }
-            usageTimeRepository.recordTimerState(finalTimerState)
             usageTimeRepository.flush()
-            Log.d(TAG, "Stopped timing untracked app transition: ${finalTimerState.appName}")
+            Log.d(TAG, "physical session ended package=${it.packageName}; episode retained")
         }
         timedForegroundApp = null
         sessionTracker.endSession()
         updateIdleNotificationIfNeeded(force = true)
     }
 
-    private suspend fun handleInterventionDecision(decision: LimitInterventionDecision) {
+    private suspend fun goHomeAndFinish(packageName: String): Boolean {
+        if (!coordinator.enhancedInterventionsAllowed(packageName) || !coordinator.requestHome(packageName)) {
+            coordinator.suppressCurrentVisit(packageName)
+            Log.w(TAG, "HOME unavailable; intervention skipped, monitoring continues package=$packageName")
+            return false
+        }
+        currentForegroundApp = null
+        finishTrackedSession(keepIntervention = true)
+        return true
+    }
+
+    private suspend fun dismissActiveIntervention() {
+        val request = activeInterventionRequest
+        interventionOverlayController.dismiss()
+        if (request != null) {
+            if (request.type == InterventionType.DAILY_LIMIT_REACHED) {
+                interventionManager.closeVisibleIntervention(request.packageName)
+            } else {
+                request.sessionGate?.let { friction.closeGate(request.packageName, it.id) }
+            }
+        }
+        clearActiveIntervention()
+    }
+
+    private fun clearActiveIntervention() {
+        val pkg = activeInterventionPackageName
+        val type = activeInterventionType
+        if (pkg != null && type != null) {
+            coordinator.releaseOverlay(
+                if (type == InterventionType.DAILY_LIMIT_REACHED) InterventionPriority.DAILY else InterventionPriority.SESSION,
+                pkg,
+            )
+        }
+        activeInterventionType = null
+        activeInterventionPackageName = null
+        activeInterventionRequest = null
+    }
+
+    private suspend fun handleInterventionDecision(
+        decision: LimitInterventionDecision,
+        alreadyHome: Boolean = false,
+    ) {
         when (decision) {
             LimitInterventionDecision.None -> Unit
             LimitInterventionDecision.Hide -> {
-                if (activeInterventionType == InterventionType.DAILY_LIMIT_REACHED) {
-                    interventionOverlayController.dismiss()
-                    clearActiveIntervention()
-                }
+                if (activeInterventionType == InterventionType.DAILY_LIMIT_REACHED) dismissActiveIntervention()
             }
             is LimitInterventionDecision.Show -> {
                 val request = decision.request
-                if (activeInterventionType == InterventionType.SESSION_REMINDER) {
-                    interventionOverlayController.dismiss()
-                    clearActiveIntervention()
+                if (activeInterventionType == InterventionType.SESSION_REMINDER) dismissActiveIntervention()
+                if (!coordinator.claimOverlay(InterventionPriority.DAILY, request.packageName)) {
+                    interventionManager.closeVisibleIntervention(request.packageName)
+                    return
                 }
-                val wasShown = interventionOverlayController.show(
-                    request = request,
-                    onExit = {
-                        serviceScope.launch {
-                            timingMutex.withLock {
-                                interventionManager.closeVisibleIntervention(request.packageName)
-                                interventionOverlayController.dismiss()
-                                clearActiveIntervention()
-                                interventionOverlayController.openHomeScreen()
-                            }
-                        }
-                    },
+                if (!alreadyHome && !goHomeAndFinish(request.packageName)) {
+                    coordinator.releaseOverlay(InterventionPriority.DAILY, request.packageName)
+                    interventionManager.closeVisibleIntervention(request.packageName)
+                    return
+                }
+                if (!coordinator.enhancedInterventionsAllowed(request.packageName)) {
+                    coordinator.releaseOverlay(InterventionPriority.DAILY, request.packageName)
+                    interventionManager.closeVisibleIntervention(request.packageName)
+                    return
+                }
+                val shown = interventionOverlayController.show(
+                    request,
+                    onExit = { serviceScope.launch { timingMutex.withLock { dismissActiveIntervention() } } },
                     onContinue = {
                         serviceScope.launch {
                             timingMutex.withLock {
-                                val sessionBefore = sessionTracker.currentInterventionProgress(
-                                    request.packageName,
-                                )
-                                if (
-                                    interventionManager.grantConfiguredExtension(
-                                        request.packageName,
-                                        request.baseLimitSeconds,
-                                    )
-                                ) {
-                                    val sessionAfter = sessionTracker.currentInterventionProgress(
-                                        request.packageName,
-                                    )
-                                    Log.d(
-                                        TAG,
-                                        "ExtensionSessionState: packageName=${request.packageName} " +
-                                            "currentSessionSeconds=${request.currentSessionSeconds} " +
-                                            "reminderCountBefore=${sessionBefore.reminderCount} " +
-                                            "reminderCountAfter=${sessionAfter.reminderCount} " +
-                                            "nextReminderBefore=${sessionBefore.nextReminderAtSeconds} " +
-                                            "nextReminderAfter=${sessionAfter.nextReminderAtSeconds}",
-                                    )
-                                    interventionOverlayController.dismiss()
-                                    clearActiveIntervention()
-                                    reevaluateAfterExtension(request.packageName)
+                                if (activeInterventionRequest != request) return@withLock
+                                val base = limitMinutesByPackage[request.packageName] ?: return@withLock
+                                val before = friction.snapshot(request.packageName)
+                                if (interventionManager.grantConfiguredExtension(request.packageName, base * SECONDS_PER_MINUTE)) {
+                                    // No relaunch, physical-session restart or episode reset.
+                                    dismissActiveIntervention()
+                                    refreshDailySnapshot(request.packageName)
+                                    updateIdleNotificationIfNeeded(force = true)
+                                    Log.d(TAG, "daily extension granted; stays HOME " +
+                                        "package=${request.packageName} episodeBefore=$before " +
+                                        "episodeAfter=${friction.snapshot(request.packageName)}")
                                 }
                             }
                         }
                     },
                 )
-                if (!wasShown) {
-                    interventionManager.onDisplayFailed(request.packageName)
-                    clearActiveIntervention()
-                    Log.w(TAG, "intervention failed but monitoring continues")
-                } else {
+                if (shown) {
                     activeInterventionType = InterventionType.DAILY_LIMIT_REACHED
                     activeInterventionPackageName = request.packageName
+                    activeInterventionRequest = request
+                } else {
+                    interventionManager.closeVisibleIntervention(request.packageName)
+                    coordinator.releaseOverlay(InterventionPriority.DAILY, request.packageName)
+                    coordinator.suppressCurrentVisit(request.packageName)
+                    Log.w(TAG, "daily overlay failed but monitoring continues")
                 }
             }
         }
     }
 
-    private suspend fun showSessionIntervention(request: LimitInterventionRequest): Boolean {
-        val wasShown = interventionOverlayController.show(
-            request = request,
-            onExit = {
-                serviceScope.launch {
-                    timingMutex.withLock {
-                        interventionOverlayController.dismiss()
-                        clearActiveIntervention()
-                        interventionOverlayController.openHomeScreen()
-                    }
-                }
-            },
-            onContinue = {
-                serviceScope.launch {
-                    timingMutex.withLock {
-                        interventionOverlayController.dismiss()
-                        clearActiveIntervention()
-                    }
-                }
-            },
-        )
-        if (wasShown) {
-            activeInterventionType = InterventionType.SESSION_REMINDER
-            activeInterventionPackageName = request.packageName
-        } else {
-            clearActiveIntervention()
-            Log.w(TAG, "session intervention failed but monitoring continues")
+    private suspend fun showSessionGate(
+        app: ForegroundApp,
+        phase: SessionGatePhase,
+        todayUsageSeconds: Long,
+    ): Boolean {
+        val pkg = app.packageName
+        if (!permissionHealthManager.state.value.canShowSessionReminder) return false
+        val mode = coordinator.sessionReminderMode(pkg) ?: return false
+        if (phase == SessionGatePhase.REENTRY && !friction.isReentryGateArmed(pkg)) return false
+        if (phase == SessionGatePhase.REENTRY && mode != SessionReminderMode.HOME) return false
+        if (!coordinator.claimOverlay(InterventionPriority.SESSION, pkg)) return false
+        if (mode == SessionReminderMode.HOME && !goHomeAndFinish(pkg)) {
+            coordinator.releaseOverlay(InterventionPriority.SESSION, pkg)
+            friction.failOpen(pkg)
+            return false
         }
-        return wasShown
+        if (!coordinator.interventionsAllowed(pkg)) {
+            coordinator.releaseOverlay(InterventionPriority.SESSION, pkg)
+            return false
+        }
+        // Repeated requests reuse the same deadline and never add a second view.
+        val gate = friction.beginGate(pkg, phase)
+        if (gate == null) {
+            coordinator.releaseOverlay(InterventionPriority.SESSION, pkg)
+            return false
+        }
+        if (activeInterventionRequest?.sessionGate?.id == gate.id && interventionOverlayController.isShowing()) return true
+        val episode = friction.snapshot(pkg) ?: return false
+        val request = LimitInterventionRequest.sessionReminder(
+            pkg, app.appName, todayUsageSeconds, episode.episodeUsageSeconds,
+            episode.firstReminderSeconds, gate,
+        )
+        val shown = interventionOverlayController.show(
+            request,
+            onExit = { serviceScope.launch { timingMutex.withLock { finishGate(request, continueApp = false) } } },
+            onContinue = { serviceScope.launch { timingMutex.withLock { finishGate(request, continueApp = true) } } },
+            onCountdownFinished = { serviceScope.launch { timingMutex.withLock { finishGate(request, continueApp = false) } } },
+        )
+        if (shown) {
+            activeInterventionType = InterventionType.SESSION_REMINDER
+            activeInterventionPackageName = pkg
+            activeInterventionRequest = request
+            if (gate.phase == SessionGatePhase.REMINDER) friction.onReminderShown(pkg, gate.id)
+            if (com.example.timemanager.BuildConfig.DEBUG) {
+                val stage = friction.snapshot(pkg)
+                Log.d("SessionFrictionTransition", "package=$pkg reminderStage=${stage?.reminderCount} " +
+                    "gateArmed=${stage?.reentryGateArmed} gateConsumed=${stage?.reentryGateConsumed} " +
+                    "action=${if (phase == SessionGatePhase.REENTRY) "SHOW_REENTRY_GATE" else "STAGE_COOLDOWN"}")
+            }
+            Log.d(INTERVENTION_TAG, "gate shown package=$pkg phase=${gate.phase} mode=$mode end=${gate.endTimeMillis}")
+        } else {
+            friction.failOpen(pkg)
+            coordinator.releaseOverlay(InterventionPriority.SESSION, pkg)
+            Log.w(TAG, "session overlay failed but monitoring continues")
+        }
+        return shown
     }
 
-    private fun clearActiveIntervention() {
-        activeInterventionType = null
-        activeInterventionPackageName = null
+    private suspend fun finishGate(request: LimitInterventionRequest, continueApp: Boolean) {
+        val gate = request.sessionGate ?: return
+        if (activeInterventionRequest?.sessionGate?.id != gate.id) return
+        if (android.os.SystemClock.elapsedRealtime() < gate.endTimeMillis) return
+        if (!continueApp) {
+            dismissActiveIntervention()
+            return
+        }
+        if (coordinator.isFocusBlocking(request.packageName)) {
+            dismissActiveIntervention()
+            return
+        }
+        // Revalidate effective daily allowance before granting any session entry token.
+        val (limit, evaluation) = refreshDailySnapshot(request.packageName)
+        if (evaluation?.isLimitReached == true && limit != null) {
+            dismissActiveIntervention()
+            handleInterventionDecision(
+                interventionManager.evaluate(
+                    request.appName, evaluation, limit.baseLimitSeconds,
+                    request.currentSessionSeconds, isNewSession = true,
+                ),
+                alreadyHome = true,
+            )
+            return
+        }
+        if (!friction.allowNextEntry(request.packageName, gate.id)) return
+        // Request the launch while our user-clicked overlay is still visible.
+        val launched = interventionOverlayController.launchApplication(request.packageName)
+        if (!launched) friction.failOpen(request.packageName)
+        dismissActiveIntervention()
+        Log.d(INTERVENTION_TAG, "gate continue package=${request.packageName} launchRequested=$launched")
     }
 
-    private suspend fun reevaluateAfterExtension(packageName: String) {
-        val foregroundApp = timedForegroundApp
-            ?.takeIf { it.packageName == packageName }
-            ?: return
-        val baseLimitMinutes = limitMinutesByPackage[packageName] ?: return
-        val timerState = appTimer.update(foregroundApp)
-        val todayUsageSeconds = usageTimeRepository.recordTimerState(timerState)
-        val effectiveLimit = interventionManager.getEffectiveLimit(
-            packageName = packageName,
-            baseDailyLimitMinutes = baseLimitMinutes,
-        )
-        val evaluation = limitEvaluator.evaluateSeconds(
-            packageName = packageName,
-            todayUsageSeconds = todayUsageSeconds,
-            limitSeconds = effectiveLimit.effectiveLimitSeconds,
-        )
-        notificationHelper.updateRunningNotification(
-            timerState = timerState,
-            todayUsageSeconds = todayUsageSeconds,
-            limitEvaluation = evaluation,
-        )
-        Log.d(
-            TAG,
-            "limit extension reevaluated packageName=$packageName " +
-                "todayUsageSeconds=$todayUsageSeconds " +
-                "effectiveLimitSeconds=${evaluation.limitSeconds} " +
-                "isOverLimit=${evaluation.isLimitReached}",
-        )
-        handleInterventionDecision(
-            interventionManager.evaluate(
-                appName = foregroundApp.appName,
-                evaluation = evaluation,
-                baseLimitSeconds = effectiveLimit.baseLimitSeconds,
-                currentSessionSeconds = timerState.currentSessionSeconds,
-                isNewSession = false,
-            ),
-        )
+    private suspend fun refreshDailySnapshot(packageName: String): Pair<
+        com.example.timemanager.data.model.EffectiveAppLimit?,
+        com.example.timemanager.data.model.UsageLimitEvaluation?,
+    > {
+        val day = usageDayProvider.currentUsageDay().key
+        val observed = coordinator.dailySnapshot(packageName)?.takeIf { it.usageDayKey == day }?.usedSeconds ?: 0L
+        val used = maxOf(observed, usageTimeRepository.getTodayUsage(packageName))
+        val storedLimit = limitRepository.observeLimit(packageName).first()
+        val limit = storedLimit?.let { interventionManager.getEffectiveLimit(packageName, it.limitMinutes) }
+        val evaluation = limit?.let { limitEvaluator.evaluateSeconds(packageName, used, it.effectiveLimitSeconds) }
+        coordinator.publishDaily(packageName, DailyLimitSnapshot(day, used, limit?.effectiveLimitSeconds,
+            evaluation?.isLimitReached == true))
+        Log.d(USAGE_LIMIT_EVALUATOR_TAG, "entry package=$packageName today=$used " +
+            "base=${limit?.baseLimitSeconds} extension=${limit?.todayExtensionSeconds} effective=${limit?.effectiveLimitSeconds}")
+        return limit to evaluation
+    }
+
+    private suspend fun resolveForegroundApp(packageName: String): ForegroundApp = withContext(Dispatchers.IO) {
+        val info = InstalledAppInfoProvider(packageManager).getUserInstalledApp(packageName)
+        ForegroundApp(packageName, info?.appName ?: packageName)
+    }
+
+    private fun observeInterventionCommands() {
+        interventionCommandsJob = serviceScope.launch {
+            coordinator.monitorCommands.collect { command ->
+                try {
+                    timingMutex.withLock {
+                        when (command) {
+                            is MonitorInterventionCommand.CheckEntry -> {
+                                if (!command.result.isActive) return@withLock
+                                val entry = command.entry
+                                if (!coordinator.isCurrent(entry) || !trackedAppsLoaded || !limitsLoaded ||
+                                    entry.packageName !in trackedPackageNames
+                                ) {
+                                    command.result.complete(EntryCheckResult.UNAVAILABLE)
+                                    return@withLock
+                                }
+                                if (coordinator.isFocusBlocking(entry.packageName)) {
+                                    command.result.complete(EntryCheckResult.HANDLED)
+                                    return@withLock
+                                }
+                                val (limit, evaluation) = refreshDailySnapshot(entry.packageName)
+                                if (!command.result.isActive || !coordinator.isCurrent(entry)) return@withLock
+                                if (limit != null && evaluation?.isLimitReached == true) {
+                                    friction.cancelBypass(entry.packageName)
+                                    val app = resolveForegroundApp(entry.packageName)
+                                    if (activeInterventionType == InterventionType.DAILY_LIMIT_REACHED &&
+                                        activeInterventionPackageName == entry.packageName
+                                    ) {
+                                        goHomeAndFinish(entry.packageName)
+                                    } else {
+                                        handleInterventionDecision(interventionManager.evaluate(
+                                            app.appName, evaluation, limit.baseLimitSeconds, 0L, isNewSession = true,
+                                        ))
+                                    }
+                                    command.result.complete(
+                                        if (coordinator.isObservedForeground(entry.packageName)) EntryCheckResult.UNAVAILABLE
+                                        else EntryCheckResult.HANDLED,
+                                    )
+                                } else {
+                                    if (activeInterventionType == InterventionType.DAILY_LIMIT_REACHED &&
+                                        activeInterventionPackageName == entry.packageName
+                                    ) dismissActiveIntervention()
+                                    command.result.complete(EntryCheckResult.CHECK_FRICTION)
+                                }
+                            }
+                            is MonitorInterventionCommand.AcceptedEntry -> {
+                                if (coordinator.isCurrent(command.entry)) {
+                                    val app = resolveForegroundApp(command.entry.packageName)
+                                    currentForegroundApp = app
+                                    processForegroundApp(app)
+                                }
+                            }
+                            is MonitorInterventionCommand.ShowReentryGate -> {
+                                if (!coordinator.isCurrent(command.entry)) return@withLock
+                                // A limit edit/crossing may have happened after the first entry check.
+                                val (limit, evaluation) = refreshDailySnapshot(command.entry.packageName)
+                                val app = resolveForegroundApp(command.entry.packageName)
+                                if (!coordinator.isCurrent(command.entry)) return@withLock
+                                if (limit != null && evaluation?.isLimitReached == true) {
+                                    friction.cancelBypass(command.entry.packageName)
+                                    handleInterventionDecision(interventionManager.evaluate(
+                                        app.appName, evaluation, limit.baseLimitSeconds, 0L, isNewSession = true,
+                                    ))
+                                    if (coordinator.isCurrent(command.entry)) coordinator.failOpenVisit(command.entry)
+                                } else {
+                                    if (!friction.isReentryGateArmed(app.packageName)) {
+                                        coordinator.allowEntry(command.entry)
+                                        return@withLock
+                                    }
+                                    val shown = showSessionGate(app, SessionGatePhase.REENTRY,
+                                        coordinator.dailySnapshot(app.packageName)?.usedSeconds ?: 0L)
+                                    if (!shown && coordinator.isCurrent(command.entry)) coordinator.failOpenVisit(command.entry)
+                                }
+                            }
+                            is MonitorInterventionCommand.ForegroundLeft -> {
+                                if (timedForegroundApp?.packageName == command.packageName) finishTrackedSession()
+                                if (currentForegroundApp?.packageName == command.packageName) currentForegroundApp = null
+                            }
+                            is MonitorInterventionCommand.DismissForFocus -> {
+                                if (!command.result.isActive) return@withLock
+                                dismissActiveIntervention()
+                                command.result.complete(true)
+                            }
+                        }
+                    }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    if (command is MonitorInterventionCommand.CheckEntry) command.result.complete(EntryCheckResult.UNAVAILABLE)
+                    if (command is MonitorInterventionCommand.DismissForFocus) command.result.complete(false)
+                    val entry = when (command) {
+                        is MonitorInterventionCommand.AcceptedEntry -> command.entry
+                        is MonitorInterventionCommand.ShowReentryGate -> command.entry
+                        else -> null
+                    }
+                    if (entry != null) {
+                        friction.failOpen(entry.packageName)
+                        if (command is MonitorInterventionCommand.ShowReentryGate) {
+                            coordinator.failOpenVisit(entry)
+                        } else {
+                            coordinator.suppressCurrentVisit(entry.packageName)
+                        }
+                        timingMutex.withLock {
+                            dismissActiveIntervention()
+                            coordinator.releaseOverlay(InterventionPriority.SESSION, entry.packageName)
+                            coordinator.releaseOverlay(InterventionPriority.DAILY, entry.packageName)
+                        }
+                    }
+                    Log.e(TAG, "intervention failed but monitoring continues", error)
+                }
+            }
+        }
     }
 
     private suspend fun updateIdleNotificationIfNeeded(force: Boolean = false) {
@@ -605,6 +763,8 @@ class UsageMonitorService : Service() {
     private fun handleDetectedApp(detectedApp: ForegroundApp) {
         val previousApp = currentForegroundApp
         if (previousApp?.packageName == detectedApp.packageName) return
+        // A real app switch is a capability boundary, not a per-second permission scan.
+        permissionHealthManager.refresh()
 
         if (previousApp == null) {
             Log.d(TAG, "当前应用: ${detectedApp.appName}")

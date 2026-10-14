@@ -14,6 +14,10 @@ class DebugTimeConfigTest {
         assertEquals(15L * 60L, BuildTimeConfig.value.firstSessionReminderSeconds)
         assertEquals(30L * 60L, BuildTimeConfig.value.secondSessionReminderSeconds)
         assertEquals(15L * 60L, BuildTimeConfig.value.extensionDurationSeconds)
+        assertEquals(5L, BuildTimeConfig.value.frictionGateSeconds)
+        assertEquals(300L, BuildTimeConfig.value.frictionResetIdleSeconds)
+        assertEquals(3L, BuildTimeConfig.value.frictionBypassSeconds)
+        org.junit.Assert.assertNull(BuildTimeConfig.value.sessionInterventionOverrideSeconds)
     }
 
     @Test
@@ -22,5 +26,8 @@ class DebugTimeConfigTest {
         assertEquals(15L, BuildTimeConfig.fastRegression.firstSessionReminderSeconds)
         assertEquals(30L, BuildTimeConfig.fastRegression.secondSessionReminderSeconds)
         assertEquals(30L, BuildTimeConfig.fastRegression.extensionDurationSeconds)
+        assertEquals(20L, BuildTimeConfig.fastRegression.sessionInterventionOverrideSeconds)
+        assertEquals(30L, BuildTimeConfig.fastRegression.frictionResetIdleSeconds)
+        assertEquals(5L, BuildTimeConfig.fastRegression.frictionGateSeconds)
     }
 }

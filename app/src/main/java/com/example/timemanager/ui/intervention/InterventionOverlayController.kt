@@ -3,11 +3,16 @@ package com.example.timemanager.ui.intervention
 import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
+import android.view.KeyEvent
 import android.view.Gravity
 import android.view.WindowManager
 import android.util.Log
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import com.example.timemanager.domain.todo.TodoRuntime
 import com.example.timemanager.data.model.LimitInterventionRequest
+import com.example.timemanager.data.model.InterventionType
 import com.example.timemanager.ui.theme.TimeManagerTheme
 import com.example.timemanager.utils.OverlayPermissionManager
 import kotlinx.coroutines.Dispatchers
@@ -27,12 +32,14 @@ class InterventionOverlayController(context: Context) {
         request: LimitInterventionRequest,
         onExit: () -> Unit,
         onContinue: () -> Unit,
+        onCountdownFinished: () -> Unit = {},
     ): Boolean = withContext(Dispatchers.Main.immediate) {
         Log.d(TAG, "show requested packageName=${request.packageName}")
         if (isOverlayShowing) {
             Log.d(TAG, "overlay already showing; addView skipped")
-            return@withContext true
+            return@withContext false
         }
+        if (request.type == InterventionType.SESSION_REMINDER && request.sessionGate == null) return@withContext false
         val permissionGranted = OverlayPermissionManager.canDrawOverlays(context)
         Log.d(TAG, "permission granted=$permissionGranted")
         if (!permissionGranted) return@withContext false
@@ -45,13 +52,17 @@ class InterventionOverlayController(context: Context) {
             Log.d(TAG, "host created")
             val view = ComposeView(context).apply {
                 owner.installViewTreeOwners(this)
+                setOnKeyListener { _, keyCode, _ -> keyCode == KeyEvent.KEYCODE_BACK }
                 Log.d(TAG, "view tree owners installed")
                 setContent {
                     TimeManagerTheme {
+                        val todoSummary by TodoRuntime.get(context).summaryProvider.summary.collectAsState()
                         LimitReachedScreen(
                             request = request,
                             onExit = onExit,
                             onContinue = onContinue,
+                            onCountdownFinished = onCountdownFinished,
+                            todoSummary = todoSummary,
                         )
                     }
                 }
@@ -103,6 +114,22 @@ class InterventionOverlayController(context: Context) {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             },
         )
+    }
+
+    /** Only invoked by the explicit, deadline-validated Continue action. */
+    fun launchApplication(packageName: String): Boolean = try {
+        val intent = context.packageManager.getLaunchIntentForPackage(packageName)
+        if (intent == null) {
+            Log.w(TAG, "launch unavailable packageName=$packageName")
+            false
+        } else {
+            context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            Log.d(TAG, "user-confirmed launch requested packageName=$packageName")
+            true
+        }
+    } catch (error: Exception) {
+        Log.e(TAG, "user-confirmed launch failed packageName=$packageName", error)
+        false
     }
 
     private fun dismissOnMain() {

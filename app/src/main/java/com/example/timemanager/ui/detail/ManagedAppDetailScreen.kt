@@ -38,6 +38,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.timemanager.R
 import com.example.timemanager.ui.components.AppIcon
+import com.example.timemanager.ui.components.DetailRow
+import com.example.timemanager.ui.components.UsageDurationText
+import com.example.timemanager.ui.components.formatUsageDuration
+import java.util.Locale
+import kotlin.math.abs
 import com.example.timemanager.ui.components.FullScreenError
 import com.example.timemanager.ui.components.FullScreenLoading
 import com.example.timemanager.ui.components.UsageProgressIndicator
@@ -132,42 +137,53 @@ private fun DetailContent(
             SectionTitle("使用设置")
         }
         item("dailyLimit") {
-            DetailSettingRow(
+            DetailRow(
                 label = "每日使用额度",
+                icon = R.drawable.ic_clock,
                 value = state.baseLimitSeconds?.let(::formatDuration) ?: "未设置",
                 onClick = onEditLimit,
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         }
         item("sessionReminder") {
-            DetailSettingRow(
-                label = "连续使用提醒",
-                value = "${state.sessionReminderMinutes} 分钟",
+            DetailRow(
+                label = "首次连续提醒",
+                icon = R.drawable.ic_bell,
+                value = "${state.sessionReminderMinutes}分钟",
                 onClick = onEditSessionReminder,
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         }
         item("intervention") {
-            DetailSettingRow(label = "超额冷静提醒", value = "已开启")
+            DetailRow(label = "超额冷静提醒", value = "已开启", icon = R.drawable.ic_bell)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         }
         item("todayTitle") {
             SectionTitle("今天")
         }
         item("extension") {
-            DetailSettingRow(
+            DetailRow(
                 label = "临时延长",
+                icon = R.drawable.ic_clock,
                 value = formatSignedDuration(state.extensionSeconds),
             )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         }
         item("trendTitle") {
             SectionTitle("使用趋势")
         }
         item("history") {
-            DetailSettingRow(
-                label = "过去7天与30天",
-                value = "查看历史",
+            DetailRow(
+                label = "过去7天",
+                value = formatDuration(state.historyTotalSeconds),
+                icon = R.drawable.ic_statistics,
                 onClick = onOpenHistory,
             )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        }
+        item("historyComparison") {
+            DetailRow("相比前7天", formatHistoryChange(state.historyChangePercent), R.drawable.ic_trend)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         }
         state.errorMessage?.let { message ->
             item("error") {
@@ -183,8 +199,11 @@ private fun DetailContent(
             TextButton(
                 onClick = { confirmRemoval = true },
                 enabled = !state.isRemoving,
-                modifier = Modifier.padding(top = TimeManagerSpacing.large),
+                modifier = Modifier.padding(top = TimeManagerSpacing.small),
             ) {
+                Icon(painterResource(R.drawable.ic_delete), null,
+                    modifier = Modifier.size(TimeManagerSpacing.medium), tint = MaterialTheme.colorScheme.error)
+                Spacer(Modifier.size(TimeManagerSpacing.small))
                 Text(
                     text = if (state.isRemoving) "移除中" else "从管理列表移除",
                     color = if (state.isRemoving) {
@@ -226,7 +245,7 @@ private fun DetailTopBar(onBack: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = TimeManagerSpacing.small),
+            .padding(vertical = TimeManagerSpacing.extraSmall),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onBack) {
@@ -242,22 +261,17 @@ private fun DetailTopBar(onBack: () -> Unit) {
 @Composable
 private fun AppIdentity(state: ManagedAppDetailUiState.Ready) {
     Row(
-        modifier = Modifier.padding(top = TimeManagerSpacing.large),
+        modifier = Modifier.padding(top = TimeManagerSpacing.medium),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AppIcon(
             bitmap = state.appIcon,
             appName = state.appName,
-            size = TimeManagerSpacing.extraLarge + TimeManagerSpacing.extraLarge,
+            size = TimeManagerSpacing.extraLarge + TimeManagerSpacing.medium,
         )
         Spacer(Modifier.size(TimeManagerSpacing.medium))
         Column(verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.extraSmall)) {
             Text(state.appName, style = MaterialTheme.typography.headlineSmall)
-            Text(
-                state.packageName,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
             if (!state.isInstalled) {
                 Text(
                     "应用可能已卸载",
@@ -280,21 +294,18 @@ private fun TodayUsageSection(state: ManagedAppDetailUiState.Ready) {
     }
 
     Column(
-        modifier = Modifier.padding(top = TimeManagerSpacing.extraLarge),
-        verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.small),
+        modifier = Modifier.padding(top = TimeManagerSpacing.medium),
+        verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.extraSmall),
     ) {
         Text(
             text = "今日使用",
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Text(
-            text = formatDuration(state.todayUsageSeconds),
-            style = MaterialTheme.typography.displaySmall,
-        )
+        UsageDurationText(state.todayUsageSeconds)
         if (effective != null) {
             Text(
-                text = "${formatDuration(state.todayUsageSeconds)} / ${formatDuration(effective)}",
+                text = "${state.todayUsageSeconds / 60L} / ${effective / 60L}分钟",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -303,7 +314,9 @@ private fun TodayUsageSection(state: ManagedAppDetailUiState.Ready) {
                 modifier = Modifier.fillMaxWidth(),
             )
             Text(
-                text = if (state.isOverLimit) {
+                text = if (state.isOverLimit && state.exceededSeconds == 0L) {
+                    "额度已用完"
+                } else if (state.isOverLimit) {
                     "已超出 ${formatDuration(state.exceededSeconds)}"
                 } else {
                     "剩余 ${formatDuration(state.remainingSeconds)}"
@@ -315,24 +328,12 @@ private fun TodayUsageSection(state: ManagedAppDetailUiState.Ready) {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 },
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(TimeManagerSpacing.large)) {
-                UsageMetric("基础额度", state.baseLimitSeconds?.let(::formatDuration) ?: "未设置")
-                UsageMetric("今日延长", formatSignedDuration(state.extensionSeconds))
-                UsageMetric("有效额度", formatDuration(effective))
-            }
+            Text(
+                "基础${state.baseLimitSeconds?.let(::formatDuration) ?: "未设置"} + 今日延长${formatDuration(state.extensionSeconds)} = ${formatDuration(effective)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
-    }
-}
-
-@Composable
-private fun UsageMetric(label: String, value: String) {
-    Column(modifier = Modifier.padding(top = TimeManagerSpacing.small)) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(text = value, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -342,36 +343,10 @@ private fun SectionTitle(title: String) {
         text = title,
         style = MaterialTheme.typography.titleMedium,
         modifier = Modifier.padding(
-            top = TimeManagerSpacing.extraLarge,
-            bottom = TimeManagerSpacing.small,
+            top = TimeManagerSpacing.medium,
+            bottom = TimeManagerSpacing.extraSmall,
         ),
     )
-}
-
-@Composable
-private fun DetailSettingRow(
-    label: String,
-    value: String,
-    onClick: (() -> Unit)? = null,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(vertical = TimeManagerSpacing.medium),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.weight(1f),
-        )
-        Text(
-            text = if (onClick == null) value else "$value  ›",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
 }
 
 @Composable
@@ -384,7 +359,7 @@ private fun SessionReminderEditorDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("连续使用提醒") },
+        title = { Text("首次连续提醒") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.compact)) {
                 Text("选择提醒时间，或输入5到180分钟。")
@@ -414,7 +389,7 @@ private fun SessionReminderEditorDialog(
                             onClick = { onPreset(minutes) },
                             enabled = !editor.isSaving,
                             modifier = Modifier.weight(1f),
-                        ) { Text("$minutes 分钟") }
+                        ) { Text("$minutes") }
                     }
                 }
                 OutlinedTextField(
@@ -457,11 +432,13 @@ private fun ErrorContent(
     )
 }
 
-private fun formatDuration(seconds: Long): String = when {
-    seconds < 60L -> "$seconds 秒"
-    seconds % 60L == 0L -> "${seconds / 60L} 分钟"
-    else -> "${seconds / 60L}分${seconds % 60L}秒"
-}
+private fun formatDuration(seconds: Long): String = formatUsageDuration(seconds)
 
 private fun formatSignedDuration(seconds: Long): String =
-    if (seconds <= 0L) "0 分钟" else "+${formatDuration(seconds)}"
+    if (seconds <= 0L) "0分钟" else "+${formatDuration(seconds)}"
+
+private fun formatHistoryChange(percent: Double?): String = when {
+    percent == null -> "暂无可比数据"
+    percent == 0.0 -> "持平"
+    else -> "${if (percent > 0) "↑" else "↓"} ${String.format(Locale.getDefault(), "%.0f", abs(percent))}%"
+}
