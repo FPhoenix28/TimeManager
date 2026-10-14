@@ -1,66 +1,203 @@
-# TimeManager
+<div align="center">
 
-[**English**](README.md) | [简体中文](README.zh-CN.md)
+# ⏳ TimeManager
 
-An Android digital wellbeing app built around intentional friction rather than hard blocking.
+**Not a hard lock. A moment to rethink before you keep scrolling.**
 
-TimeManager introduces deliberate pauses when app usage becomes unconscious or prolonged. You choose the applications to manage, set personal limits, and decide what to do after a reminder. It is a personal project under active development, not a tamper-proof parental-control or device-management system.
+An open-source Android digital wellbeing app for reducing mindless phone use.
 
-中文：TimeManager 通过连续使用提醒、冷静页和专注模式，帮助用户减少无意识刷手机；配置和记录默认保存在设备上。
+**English** · [简体中文](README.zh-CN.md)
 
-## Features
+![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white)
+![Kotlin](https://img.shields.io/badge/Kotlin-Compose-7F52FF?logo=kotlin&logoColor=white)
+![License](https://img.shields.io/badge/License-Apache--2.0-blue)
+![Open Source](https://img.shields.io/badge/Open%20Source-Yes-brightgreen)
 
-- Managed apps with editable daily usage limits and live usage tracking.
-- Unlimited **+15 minute** extensions for the current usage day; the saved base limit stays unchanged.
-- Per-app first session reminder, defaulting to **10 minutes** when unset, then **+8, +8, +5 minutes**, followed by further 5-minute intervals.
-- Session Friction episodes and a one-shot re-entry gate per reminder stage; five minutes of genuine disengagement resets the episode.
-- Focus Mode for selected apps and Deep Focus with necessary system exceptions and an explicit early-exit flow.
-- Lightweight todos with Home/overlay summaries and staged reminders.
-- Room-backed usage history, available-system-history backfill, daily/7-day/30-day statistics and per-app history.
-- Permission health guidance and light/dark system-theme support.
+</div>
 
-A usage day runs from **04:00 to the following 04:00**, in the device time zone. A physical foreground session and a reminder episode are different concepts; see [current implementation](docs/PROJECT_STATE.md).
+---
 
-## UI
+## What does TimeManager do?
 
-The app uses a restrained Material 3 dashboard, managed-app details and 7-/30-day statistics. A brand-neutral public illustration is not currently included: the previous private design reference contained third-party app logos and has been excluded from this repository's history. Raw device screenshots are also excluded. See [UI verification scope](docs/testing/UI_VERIFICATION.md) for what was actually checked.
+You know the feeling:
 
-## Architecture
+> You open an app for “just a minute” — and somehow half an hour disappears.
 
-UsageStats / realtime timer → repositories and evaluators → process-scoped InterventionCoordinator → overlay / Accessibility actions.
+TimeManager is built for that moment.
 
-The UI observes ViewModel state. Preferences DataStore holds configuration and temporary daily state; Room holds usage snapshots, todos and reminder receipts. WorkManager schedules todo reminders, not realtime limit enforcement. The monitoring foreground service continues running when an intervention is displayed.
+Instead of permanently locking apps, it creates a short pause when usage becomes too long or too automatic, then asks you to make a conscious choice:
 
-Built with Kotlin, Jetpack Compose Material 3, coroutines/StateFlow, Room, Preferences DataStore, WorkManager, UsageStatsManager, AccessibilityService, a foreground service and WindowManager overlays. [Architecture overview](docs/architecture/OVERVIEW.md).
+**Keep going, or stop for now?**
 
-## Permissions
+A typical flow looks like this:
 
-| Permission / capability | Purpose |
+**Choose apps → set limits / reminders → use for too long → pause → decide again**
+
+---
+
+## ✨ What can it do?
+
+### ⏱️ Daily app limits
+
+Set a daily allowance for the apps you want to manage.
+
+When you reach it, TimeManager asks you to stop. If you really want more time today, you can add **15 minutes** without changing your saved daily limit.
+
+### 🧊 Interrupt endless scrolling
+
+Set how long you want to use an app continuously before getting a reminder.
+
+The default first reminder is **10 minutes**. If you keep using the app, later reminders gradually become more frequent.
+
+With the full intervention features enabled, TimeManager can take you back to the Home screen, give you a few seconds to cool down, and briefly pause you again when you immediately reopen the app.
+
+The goal is not to forbid you from continuing — it is to turn an automatic habit into a conscious decision.
+
+### 🎯 Focus Mode
+
+Choose a duration and a set of distracting apps.
+
+During the session, opening those apps is blocked, making it useful for studying, writing or focused work.
+
+### 🌙 Deep Focus
+
+A stronger mode for times when you really want to disconnect.
+
+It blocks ordinary apps while keeping essential system experiences such as the lock screen, keyboard, calls and necessary system UI available.
+
+Ending it early requires a deliberate press-and-hold confirmation.
+
+### ✅ Lightweight todos
+
+TimeManager includes a small Todo feature.
+
+It is not meant to replace a full task manager. Its purpose is simple: when TimeManager reminds you to stop scrolling, it can also remind you what you actually wanted to do today.
+
+### 📊 See where your time went
+
+View:
+
+- today's managed-app usage
+- usage by app
+- 7-day and 30-day trends
+- per-app history
+
+A TimeManager “day” starts at **04:00**, so staying up past midnight does not suddenly reset everything.
+
+---
+
+## 💡 Why not just lock apps?
+
+Because TimeManager is not trying to make decisions for you.
+
+A lot of unwanted phone use looks like this:
+
+- “I’ll just check something.”
+- your hand opens the app automatically
+- you lose track of time
+- you leave…
+- and reopen it almost immediately
+
+TimeManager focuses on the moment between impulse and action.
+
+> **Add a little friction before the habit continues.**
+
+You are still allowed to continue — but first, you notice that you are choosing to.
+
+---
+
+## 🔐 Privacy
+
+TimeManager is currently **local-first**:
+
+- no backend client
+- no analytics SDK
+- no usage-data upload implementation
+- no Internet permission in the app manifest
+- settings, usage history and todos are stored locally
+- Accessibility does not read screen content (`canRetrieveWindowContent=false`)
+
+Android system backup is currently enabled, so some local data may still be included in OS-managed backup or device-transfer flows.
+
+---
+
+## 🔑 Why does it need permissions?
+
+| Permission | Why |
 | --- | --- |
-| Usage Access | Read usage events and identify foreground app usage. |
-| Display over other apps | Show deliberate-pause and focus overlays. |
-| Notifications | Show ongoing monitoring, quota and todo reminders. Android may require runtime consent. |
-| Accessibility | Perform HOME actions, observe app re-entry, and enforce Focus / Deep Focus. This is not required just to show an ordinary Session Reminder overlay. |
-| Installed-app visibility | Resolve and select installed apps and their names/icons. |
+| **Usage Access** | Know which app is being used and for how long |
+| **Display over other apps** | Show pause screens and interventions |
+| **Notifications** | Show live usage, quota and todo reminders |
+| **Accessibility** | Return to Home, detect re-entry, and enforce Focus / Deep Focus |
+| **Installed app visibility** | Let you choose which installed apps to manage |
 
-Enable permissions yourself through the app's guidance. With Accessibility off, ordinary session reminders can fall back to overlay-only; HOME, re-entry gates and Focus/Deep Focus enforcement are incomplete. Permission settings and background behavior vary by Android vendor.
+You enable these permissions yourself.
 
-## Privacy
+Without Accessibility, basic session reminders can still work, but automatic Home actions, re-entry pauses, Focus and Deep Focus are limited.
 
-Current application source has no backend client, analytics SDK or usage-upload implementation, and the app manifest does not request Internet access. Configuration, usage history and todos are stored locally. Accessibility subscribes to window-state events and declares `canRetrieveWindowContent=false`; it does not retrieve screen content.
+---
 
-**Android backup is enabled in the current manifest.** Local-first does not mean excluded from OS-managed backup or device transfer. Debug logs may include package names and timing information: review/redact logs and screenshots before sharing. No claim of encryption or a security audit is made.
+## 📱 Project status
 
-## Build
+TimeManager is open source and its core features are usable. Development and device testing have primarily been done on **vivo X200s / Android 16**.
+
+Some areas still need broader validation, including:
+
+- more Android vendors
+- large text / landscape layouts
+- permissions being revoked while running
+- real incoming-call behavior during Deep Focus
+
+👉 [See known open issues](docs/OPEN_ISSUES.md)
+
+There is **no signed, ready-to-install Release APK yet**. For now, developers can build the project from source; non-developers may prefer to wait for a future Release.
+
+---
+
+<details>
+<summary><strong>🛠️ Developer details: stack, build and architecture</strong></summary>
+
+### Tech stack
+
+- Kotlin
+- Jetpack Compose Material 3
+- Coroutines / StateFlow
+- Room
+- Preferences DataStore
+- WorkManager
+- UsageStatsManager
+- AccessibilityService
+- Foreground Service
+- WindowManager Overlay
+
+### High-level architecture
+
+```text
+Usage data / realtime timer
+        ↓
+business rules and state
+        ↓
+InterventionCoordinator
+        ↓
+pause UI / overlays / Accessibility actions
+```
+
+More details:
+
+- [Current project state](docs/PROJECT_STATE.md)
+- [Architecture overview](docs/architecture/OVERVIEW.md)
+- [Testing reports](docs/testing/README.md)
+
+### Build
 
 Requirements:
 
-- Android Studio with support for the versions in the repository, or command-line Android SDK tools.
-- Android SDK Platform **37** (minimum supported device API **26**).
-- Network access for Gradle/dependency/toolchain downloads on a first build.
-- A Java runtime to launch Gradle. The checked-in daemon criteria request **JDK 25**, provisioned through Foojay; install that JDK locally if automatic provisioning is unavailable. Java source compatibility is 11, which is not the Gradle daemon version.
+- Android SDK Platform **37**
+- Minimum device API **26**
+- Current Gradle daemon: **JDK 25**
+- Java source compatibility: 11
 
-Clone the repository, open it in Android Studio, let Gradle sync, and select your SDK installation. For command-line builds, provide `ANDROID_HOME` or a local, untracked `local.properties`. No private signing key or developer-specific absolute path is needed.
+Windows:
 
 ```powershell
 .\gradlew.bat :app:testDebugUnitTest
@@ -68,16 +205,30 @@ Clone the repository, open it in Android Studio, let Gradle sync, and select you
 .\gradlew.bat :app:assembleRelease
 ```
 
-On macOS/Linux use `sh ./gradlew` (the wrapper currently has no executable bit). Debug builds are development-signed; the current Release build produces an **unsigned** APK and is not a ready-to-publish store artifact. No APK is committed. The current `versionName=1.0` is legacy build metadata, not a published release or a stability guarantee.
+macOS / Linux:
 
-Host unit tests do not install anything on a phone. Read [DEVICE_SAFETY.md](DEVICE_SAFETY.md) before device testing. In particular, do not run the default `connectedDebugAndroidTest` workflow on the user's vivo X200s: its cleanup is unsafe for persistent user data.
+```bash
+sh ./gradlew
+```
 
-## Status and contributing
+The current Release build produces an **unsigned APK**.
 
-Primarily tested on vivo X200s / Android 16. Cross-vendor behavior, full permission-revocation coverage, large-font/landscape validation and real incoming-call behavior still need broader validation. See [open issues](docs/OPEN_ISSUES.md), [sanitized test reports](docs/testing/README.md), [changelog](CHANGELOG.md) and [contribution guide](CONTRIBUTING.md).
+Host unit tests do not install anything on a phone. Read [DEVICE_SAFETY.md](DEVICE_SAFETY.md) before device testing.
 
-This is the independent open-source candidate repository, currently private pending owner review; migration does not publish an APK, create a GitHub Release or change visibility. Dependency and visual-asset attribution notes are in [third-party notices](docs/THIRD_PARTY_NOTICES.md).
+</details>
 
-## License
+---
 
-Copyright 2026 FPhoenix28. Project-authored material is licensed under the [Apache License 2.0](LICENSE). Third-party dependencies, trademarks and assets retain their own terms.
+## 🤝 Contributing
+
+Bug reports, ideas and improvements are welcome through GitHub Issues.
+
+- [Contributing guide](CONTRIBUTING.md)
+- [Changelog](CHANGELOG.md)
+- [Third-party notices](docs/THIRD_PARTY_NOTICES.md)
+
+## 📄 License
+
+Copyright 2026 FPhoenix28.
+
+Project-authored material is licensed under the [Apache License 2.0](LICENSE). Third-party dependencies, trademarks and assets retain their own terms.
