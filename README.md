@@ -1,5 +1,7 @@
 # TimeManager
 
+[**English**](README.md) | [简体中文](README.zh-CN.md)
+
 An Android digital wellbeing app built around intentional friction rather than hard blocking.
 
 TimeManager introduces deliberate pauses when app usage becomes unconscious or prolonged. You choose the applications to manage, set personal limits, and decide what to do after a reminder. It is a personal project under active development, not a tamper-proof parental-control or device-management system.
