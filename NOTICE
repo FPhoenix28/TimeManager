@@ -4,3 +4,10 @@ Copyright 2026 FPhoenix28
 Project-authored material is licensed under the Apache License, Version 2.0.
 Third-party components and trademarks retain their own licenses and rights.
 See docs/THIRD_PARTY_NOTICES.md.
+
+Visual resources include inherited/adapted Google Material icon motifs,
+available under Apache-2.0, and Android Studio launcher template artwork.
+The Android robot graphic is derived from work created and shared by Google
+and used under the Creative Commons Attribution 3.0 license:
+https://creativecommons.org/licenses/by/3.0/
+Android is a trademark of Google LLC. No endorsement is implied.

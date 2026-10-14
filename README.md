@@ -19,11 +19,9 @@ TimeManager introduces deliberate pauses when app usage becomes unconscious or p
 
 A usage day runs from **04:00 to the following 04:00**, in the device time zone. A physical foreground session and a reminder episode are different concepts; see [current implementation](docs/PROJECT_STATE.md).
 
-## Design preview
+## UI
 
-![Approved dark UI design](docs/ui/2026-10-14-final-dark-ui.png)
-
-This is the approved **design reference**, not a device screenshot or a promise that every screen exactly matches it. Names, icons, todo text and numbers in the image are illustrative. Third-party app names and logos belong to their respective owners and do not imply endorsement. Raw device screenshots are deliberately excluded.
+The app uses a restrained Material 3 dashboard, managed-app details and 7-/30-day statistics. A brand-neutral public illustration is not currently included: the previous private design reference contained third-party app logos and has been excluded from this repository's history. Raw device screenshots are also excluded. See [UI verification scope](docs/testing/UI_VERIFICATION.md) for what was actually checked.
 
 ## Architecture
 
@@ -76,7 +74,7 @@ Host unit tests do not install anything on a phone. Read [DEVICE_SAFETY.md](DEVI
 
 Primarily tested on vivo X200s / Android 16. Cross-vendor behavior, full permission-revocation coverage, large-font/landscape validation and real incoming-call behavior still need broader validation. See [open issues](docs/OPEN_ISSUES.md), [sanitized test reports](docs/testing/README.md), [changelog](CHANGELOG.md) and [contribution guide](CONTRIBUTING.md).
 
-The repository is prepared for owner review; this cleanup does not publish an APK, create a GitHub Release or change visibility. Dependency and visual-asset attribution notes are in [third-party notices](docs/THIRD_PARTY_NOTICES.md).
+This is the independent open-source candidate repository, currently private pending owner review; migration does not publish an APK, create a GitHub Release or change visibility. Dependency and visual-asset attribution notes are in [third-party notices](docs/THIRD_PARTY_NOTICES.md).
 
 ## License
 

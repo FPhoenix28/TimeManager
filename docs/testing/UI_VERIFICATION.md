@@ -1,6 +1,6 @@
 # Final UI verification — 2026-10-14
 
-Reference: [approved dark design](../ui/2026-10-14-final-dark-ui.png). This is an illustrative mockup, not private device data. Device: vivo X200s / Android 16; package `com.example.timemanager`. Raw device captures remain outside Git.
+Reference: the privately retained approved dark design. Its branded illustrative image is not distributed in this public candidate; see [public UI asset policy](../ui/README.md). Device: vivo X200s / Android 16; package `com.example.timemanager`. Raw device captures remain outside Git. This historical validation describes the implemented UI, not a new visual test during migration.
 
 ## Implementation boundary
 

@@ -6,7 +6,7 @@ Date: 2026-10-14. Scope: repository-only preparation; no product behavior or pho
 
 - Clean starting worktree; one local/default branch `master`, 14 commits reachable across the audited original refs, no tags.
 - Original tracked inventory: 177 main source/resource files, 27 host-test files, two device-test source files, 20 Markdown files, 17 other build/tool files, two APKs and 75 raw screenshots. No tracked build/IDE/log/temp output in that inventory. Source includes variant-specific configuration in the build/tool category.
-- Source/test/resources/Gradle wrapper, device-safety rules, historical incident and approved design retained.
+- Source/test/resources/Gradle wrapper, device-safety rules and historical incident retained. The original branded design is retained privately, not in the independent public candidate.
 - Current implementation, architecture, actionable open validation work and sanitized engineering reports replace mixed task journals.
 - English-first README, standard Apache-2.0 LICENSE, NOTICE, changelog, contributing guide and issue templates added.
 
@@ -20,13 +20,21 @@ Validation inspected all 434 reachable file blobs and complete author/committer 
 
 The exact private `FPhoenix28/TimeManager` remote was rechecked immediately before update: master only, no tags, only the owner listed as collaborator. Master was updated using an explicit expected-old-tip `--force-with-lease`, not a mirror push. Visibility was not changed and no Release/tag was created. The working repository was aligned to the identical rewritten tree; old internal checkpoint refs were removed only after their complete external backup was verified. Original unreachable objects were not manually pruned from the original working directory. Subsequent documentation-only commits increase commit/object counts without changing the validated product tree.
 
-**Publication hold:** an authenticated GitHub REST lookup by the old pre-cleanup commit ID still returned HTTP 200 and the old personal author email after the rewrite. Clean reachable refs/fresh clones do not prove that GitHub has purged unreferenced server objects. The repository remains private; do not publish it yet under the requested no-old-private-data requirement. No old object ID or personal address is reproduced in this public report. See remaining risks below.
+**Historical reason for migration:** the original repository still returned an old pre-cleanup object with its former personal author email after history rewriting. That original repository has now been renamed and remains permanently private pending the owner's later decision. It is not the new independent candidate described below. No old object ID or personal address is reproduced in this public report.
+
+## Public repository migration
+
+- Old repository: `FPhoenix28/TimeManager-private-archive`, ID **1338334318**, Private, not GitHub-archived/deleted/transferred. Rename preserved master at the approved cleaned baseline.
+- New repository: `FPhoenix28/TimeManager`, ID **1418544365**, independently created empty and **Private pending owner review**. No fork/template import, initialized README/license/gitignore, wiki, release or tag was created.
+- Candidate came from a fresh, single-branch archive clone at the approved baseline. Initial all-ref audit: 439 file blobs, noreply author/committer metadata, no old personal identifier, raw artifacts or known pre-cleanup commit in its reachable object set.
+- The branded design image was removed from candidate history using git-filter-repo; all product/build/safety files remain identical. Documentation/image attribution was updated. The previous private repository's cached objects are not copied as candidate refs.
+- First push, new-repository old-commit isolation, server checks and independent new-repository build execution are pending at this checkpoint. Migration is not considered complete until those checks actually pass.
 
 ## Privacy audit
 
 Initial complete reachable-object scan inspected 518 file blobs, including commit snapshots/internal local refs. Findings: two APKs, raw device images, exact device serial in nine text paths, host absolute paths in ten, and personal email in author/committer metadata. No obvious API credential/private-key/IP/phone-number candidate was found by the text patterns. Source `this@Class.method` syntax produced false email candidates and is not personal contact information.
 
-The scan is evidence, not a guarantee about arbitrary unknown secrets. All raw device images are excluded regardless of their visible contents. The formal mockup was visually reviewed: illustrative app logos/data and generic tasks, not a raw device capture. Diagnostic strings in source are not runtime log dumps. Backup/mirror material containing originals remains private and must never be published.
+The scan is evidence, not a guarantee about arbitrary unknown secrets. All raw device images are excluded regardless of their visible contents. The former illustrative branded mockup has also been excluded from candidate history. Diagnostic strings in source are not runtime log dumps; session bypass tokens are business-state variables, not credentials. Backup/mirror material containing originals remains private and must never be published. The existing external backup was only checked for existence/access during this migration and was not modified.
 
 ## Files removed from Git
 
@@ -34,6 +42,7 @@ The scan is evidence, not a guarantee about arbitrary unknown secrets. All raw d
 - 75 raw PNGs, including invalid and personal-data-bearing captures.
 - Retired task logs and old agent-specific plans; public conclusions and durable architecture are retained in new documents.
 - The device-bound screenshot script is replaced by a parameterized reusable host tool with no hardcoded device or SDK path.
+- The original branded documentation PNG is absent from the independent candidate's full reachable history, not merely from its latest tree.
 
 ## Files retained locally
 
@@ -57,11 +66,11 @@ Native-library stripping reported its existing packaging warning, not a build fa
 
 ## Remaining risks
 
-- The approved design contains third-party marks; per-vector/template provenance is not fully mapped. Review before binary distribution; project licensing does not license third-party trademarks.
+- Branded documentation imagery has been removed. Launcher/template and Material-style vector attribution is documented after asset inspection; project licensing does not transfer Google's marks or substitute for final binary-distribution review.
 - Android backup is currently enabled; app-local data is not claimed to be excluded from OS backup.
 - Cross-vendor/permission/large-font/landscape/incoming-call validation is incomplete; see OPEN_ISSUES. No store-policy approval or production signing was performed.
 - Rewritten remote history requires collaborators to re-clone. Remote ownership/private status and collaborator list must be rechecked immediately before publishing cleaned refs.
-- **Blocking public visibility:** GitHub still retains a queryable old commit object with the former personal email. Force-push does not itself erase cached/unreferenced server data. The owner should request server-side removal through [GitHub Support](https://support.github.com/) while keeping this repository private, then recheck the old object. Support eligibility is determined by GitHub, not guaranteed here. If it cannot be purged, publishing a separate newly created clean repository is an alternative requiring an explicit owner decision; no repository deletion/recreation is authorized or performed. [GitHub's official sensitive-data cleanup guidance](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository) documents this distinction.
+- The old private archive can still retain cached/unreferenced objects; it must not be published or used as a mirror-push source. New-repository isolation is checked against that distinct repository ID and the old pre-cleanup commit. This does not claim that the old server cache was purged. [GitHub's cleanup guidance](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository) explains why rewriting an old repository alone is not a purge.
 
 ## Recommended version
 
@@ -71,7 +80,7 @@ Release-notes draft: Managed app tracking and quotas; unlimited daily +15-minute
 
 ## Before making repository public
 
-Repository preparation/build validation is complete, but **not yet cleared for public visibility** because of GitHub's retained old object. Owner review and resolution of that server-side item are required. Do not upload local backup material, recreate the old history, publish raw captures or change visibility as part of this cleanup. Review license/provenance notes and unresolved device validation; choose release metadata/signing separately.
+The independent candidate stays private while migration isolation and new-repository fresh-build checks complete, then awaits owner review. Do not upload private backups, merge old history, mirror-push the archive, publish raw captures or automatically change visibility. The old private archive is not a public release source. Review attribution notes and unresolved device validation; choose release metadata/signing separately.
 
 - [x] No APK in cleaned history
 - [x] No raw device screenshots in cleaned history
@@ -86,4 +95,6 @@ Repository preparation/build validation is complete, but **not yet cleared for p
 - [x] Fresh clone builds
 - [x] Freshly executed tests pass
 - [x] Repository still private (verified again after remote update)
-- [ ] GitHub old private objects/cache no longer addressable — still blocked; owner action required
+- [x] Old repository renamed and retained Private; cached old objects there are not claimed purged
+- [ ] Old pre-cleanup commit is not addressable in the NEW independent TimeManager repository
+- [ ] Fresh clone of the NEW independent repository passes tests/builds/migration
