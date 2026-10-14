@@ -12,7 +12,13 @@ Date: 2026-10-14. Scope: repository-only preparation; no product behavior or pho
 
 ## History cleanup
 
-Pending separate-mirror rewrite and verification. Planned removal: retired `tasks/` and agent-specific `docs/superpowers/` paths across history, after moving durable conclusions to public docs. Planned privacy replacement: exact device identifier/private host paths and the old personal author/committer address, using the owner's explicitly provided GitHub noreply address. No release tags exist to rewrite.
+Completed in a separate mirror using git-filter-repo 2.47.0. Retired `tasks/` and agent-specific `docs/superpowers/` paths were removed across public history, after moving durable conclusions to public docs. Exact device identifier/private host paths were generalized; all original author/committer emails were rewritten to the owner's explicitly supplied `249264302+FPhoenix28@users.noreply.github.com`.
+
+All 14 original commits plus the cleanup commit were retained in order (15 at the rewrite checkpoint); no branch/tag was discarded (public remote has master only, no tags). Local Codex tree/checkpoint and remote-tracking refs are preserved in the private original backup, not published as project branches. Rewritten mirror contains only `refs/heads/master`.
+
+Validation inspected all 434 reachable file blobs and complete author/committer metadata: no removed artifact path, old personal identifier, host absolute path or obvious credential candidate remained. All 77 old raw-image/APK blob objects were absent from the new reachable object set. `git fsck --full` passed. Product/build/device-safety trees were compared for **every mapped commit**, not only HEAD, and were unchanged. The full current tree was identical before/after rewrite. Repacked public history at this checkpoint was 937 objects / 1.81 MiB; size alone was not used as proof.
+
+Remote update and independent remote fresh-clone verification remain pending at this checkpoint. Later documentation-only commits can increase commit/object counts without changing the validated product tree.
 
 ## Privacy audit
 
@@ -60,12 +66,12 @@ Release-notes draft: Managed app tracking and quotas; unlimited daily +15-minute
 
 Owner review is still required. Do not upload local backup material, recreate the old history, publish raw captures or change visibility as part of this cleanup. Review license/provenance notes and unresolved device validation; choose release metadata/signing separately.
 
-- [ ] No APK in cleaned history
-- [ ] No raw device screenshots in cleaned history
-- [ ] No signing key found
-- [ ] No API secret found by audit
-- [ ] No personal email in cleaned commit metadata
-- [ ] No exact device serial in cleaned reachable text
+- [x] No APK in cleaned history
+- [x] No raw device screenshots in cleaned history
+- [x] No signing key found
+- [x] No API secret found by audit
+- [x] No personal email in cleaned commit metadata
+- [x] No exact device serial in cleaned reachable text
 - [x] README complete
 - [x] LICENSE present
 - [x] CHANGELOG present
