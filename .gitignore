@@ -14,3 +14,25 @@
 .cxx
 local.properties
 .idea/
+
+# Build artifacts (keep the Gradle wrapper JAR)
+**/build/
+*.apk
+*.aab
+.kotlin/
+
+# Signing
+*.jks
+*.keystore
+keystore.properties
+signing.properties
+
+# Logs / temporary
+*.log
+*.tmp
+*.bak
+*.hprof
+
+# Retired local working notes and raw device-test material
+/tasks/
+/docs/superpowers/

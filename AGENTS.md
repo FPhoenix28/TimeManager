@@ -2,6 +2,10 @@
 
 我们不是写安全论文。保持实现和校验与任务风险相称，避免过度防御、反复罗列极小概率情况；不生成散列校验或相关算法。
 
+## 项目状态与文档
+
+了解当前实现时先读 [PROJECT_STATE.md](docs/PROJECT_STATE.md)，待验证事项见 [OPEN_ISSUES.md](docs/OPEN_ISSUES.md)。新计划放在 `docs/plans/`，可公开测试结论放在 `docs/testing/`；`tasks/` 已退休，仅保留本地材料。提交前检查日志、截图和报告，使用泛化设备标识及相对路径；APK、原始真机截图和个人数据留在 Git 之外。
+
 ## 真机操作：SAFE DEVICE TESTING BY DEFAULT
 
 涉及 ADB、Android Studio 真机运行、设备自动化、instrumentation 或测试 cleanup 前，完整阅读 [DEVICE_SAFETY.md](DEVICE_SAFETY.md)。该文件是设备操作分类、内部 Preflight 和破坏性操作批准流程的权威规则。

@@ -1,0 +1,43 @@
+name: Bug report
+description: Report an observed TimeManager problem
+body:
+  - type: markdown
+    attributes:
+      value: "Please redact private notifications, chats, account details, device serials and personal paths from screenshots and logs."
+  - type: input
+    id: android
+    attributes:
+      label: Android version
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device model (no serial number)
+  - type: input
+    id: version
+    attributes:
+      label: TimeManager version or commit
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Redacted logs and permission state
+      render: text

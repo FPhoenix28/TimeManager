@@ -2,6 +2,8 @@
 
 日期：2026-09-30。时间均为 Asia/Shanghai（UTC+08:00）；原始 Codex/UTP UTC 时间已换算。
 
+公开整备注：仅泛化设备序列号和主机私人路径，保留原有证据、责任、ROOT CAUSE NOT PROVEN 结论和安全边界。第 9–12 节描述事故当时的规则；当前正常测试策略以根目录 DEVICE_SAFETY.md 为准。此报告不是运行历史危险命令的授权。
+
 ## 结论与证据边界
 
 **ROOT CAUSE NOT PROVEN。** 未保留那次实际 `pm uninstall` 调用及其成功返回，不能将推断写成已证实卸载操作。
@@ -85,7 +87,7 @@ $env:JAVA_HOME='<jdk-home>'; .\gradlew.bat :app:connectedDebugAndroidTest '-Pand
 
 ### 本轮横屏尝试的显式 ADB 命令清单
 
-原始调用可执行文件均为 `<android-sdk>\platform-tools\adb.exe`，当时未带 `-s`。下表列出完整 ADB 参数和主机结果筛选摘要；完整 PowerShell 筛选表达式仍可按时间/ordinal 在原始 Codex 记录中核查。这些均为查询。11:13 的 `emulator.exe -list-avds` 也只是查询。
+原始调用可执行文件均为 `<android-sdk>/platform-tools/adb.exe`，当时未带 `-s`。下表列出完整 ADB 参数和主机结果筛选摘要；完整 PowerShell 筛选表达式仍可按时间/ordinal 在原始 Codex 记录中核查。这些均为查询。11:13 的 `emulator.exe -list-avds` 也只是查询。
 
 | 时间 | 参数及主机筛选 |
 | --- | --- |
@@ -176,8 +178,8 @@ $env:JAVA_HOME='<jdk-home>'; .\gradlew.bat :app:connectedDebugAndroidTest '-Pand
 
 ## 原始证据位置
 
-- Codex：`<private-agent-session-log>`（按上述 ordinal 定位）。
-- Gradle：`<gradle-user-home>\daemon\9.5.0\daemon-3856.out.log`，重点 453–486 行、505–515 行。
+- Codex：保存在本地主机会话日志（私人路径不公开，按上述 ordinal 定位）。
+- Gradle：`<gradle-user-home>/daemon/9.5.0/daemon-3856.out.log`，重点 453–486 行、505–515 行。
 - UTP：`app/build/outputs/androidTest-results/connected/debug/V2458A - 16/test-result.textproto`。
 - instrumentation：同目录 `testlog/test-results.log` 以及 `logcat-com.example.timemanager.ui.intervention.ResponsiveOverlayLayoutTest-dailyLimitExitButtonStaysInsideShortWideViewport.txt`。
 - AGP 源码：本机 Gradle 缓存 `com.android.tools.build/gradle/9.3.1` 内 `gradle-9.3.1-sources.jar`。
