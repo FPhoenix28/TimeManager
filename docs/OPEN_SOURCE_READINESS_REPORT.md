@@ -18,7 +18,9 @@ All 14 original commits plus the cleanup commit were retained in order (15 at th
 
 Validation inspected all 434 reachable file blobs and complete author/committer metadata: no removed artifact path, old personal identifier, host absolute path or obvious credential candidate remained. All 77 old raw-image/APK blob objects were absent from the new reachable object set. `git fsck --full` passed. Product/build/device-safety trees were compared for **every mapped commit**, not only HEAD, and were unchanged. The full current tree was identical before/after rewrite. Repacked public history at this checkpoint was 937 objects / 1.81 MiB; size alone was not used as proof.
 
-Remote update and independent remote fresh-clone verification remain pending at this checkpoint. Later documentation-only commits can increase commit/object counts without changing the validated product tree.
+The exact private `FPhoenix28/TimeManager` remote was rechecked immediately before update: master only, no tags, only the owner listed as collaborator. Master was updated using an explicit expected-old-tip `--force-with-lease`, not a mirror push. Visibility was not changed and no Release/tag was created. The working repository was aligned to the identical rewritten tree; old internal checkpoint refs were removed only after their complete external backup was verified. Original unreachable objects were not manually pruned from the original working directory. Subsequent documentation-only commits increase commit/object counts without changing the validated product tree.
+
+**Publication hold:** an authenticated GitHub REST lookup by the old pre-cleanup commit ID still returned HTTP 200 and the old personal author email after the rewrite. Clean reachable refs/fresh clones do not prove that GitHub has purged unreferenced server objects. The repository remains private; do not publish it yet under the requested no-old-private-data requirement. No old object ID or personal address is reproduced in this public report. See remaining risks below.
 
 ## Privacy audit
 
@@ -47,7 +49,11 @@ README, LICENSE, NOTICE, CHANGELOG, CONTRIBUTING, PROJECT_STATE, OPEN_ISSUES, ar
 
 Current-tree verification completed: `:app:testDebugUnitTest :app:assembleDebug :app:assembleRelease --offline --no-build-cache --rerun-tasks` succeeded, with all 96 actionable tasks executed. JUnit XML: **27 suites / 125 tests, 0 failures, 0 errors, 0 skipped**. `tools/Verify-TodoMigration.ps1` and `git diff --check` passed. Product source, resources, tests and Gradle/build configuration are unchanged from the starting commit. The parameterized screenshot tool passed syntax parsing only and was not run against a device.
 
-The build reused the existing configuration/dependency environment, so it is not the fresh-clone check. Independent cleaned fresh-clone execution remains pending. Native-library stripping reported its existing packaging warning, not a build failure. No connected instrumentation or phone operation is part of this task.
+An independent **clone from GitHub after the remote update** was then verified in `../TimeManager-fresh-validation-2026-10-14/`. Before building it had a clean Git status and no local.properties, .idea, .gradle or app/build. The installed SDK was provided by environment, not by a copied local file. The host's normal dependency/toolchain installation was available; no previous project build directory was copied.
+
+Fresh-clone command: `gradlew.bat :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease --no-build-cache --no-configuration-cache --rerun-tasks`. **BUILD SUCCESSFUL in 2m 32s; 96 actionable tasks executed.** JUnit XML: **27 suites / 125 tests, 0 failures, 0 errors, 0 skipped**. Migration verification passed again; Git remained clean and local.properties was still absent. Debug and unsigned Release APKs were generated locally, not committed or installed. Validated product revision: `dd78e52cf54ce2e08887575478e069e958c4af34`; later final-report/README edits are documentation-only.
+
+Native-library stripping reported its existing packaging warning, not a build failure. No connected instrumentation or phone operation occurred. Linux/macOS builds were not executed; README uses `sh ./gradlew` because the preserved wrapper lacks an executable bit.
 
 ## Remaining risks
 
@@ -55,6 +61,7 @@ The build reused the existing configuration/dependency environment, so it is not
 - Android backup is currently enabled; app-local data is not claimed to be excluded from OS backup.
 - Cross-vendor/permission/large-font/landscape/incoming-call validation is incomplete; see OPEN_ISSUES. No store-policy approval or production signing was performed.
 - Rewritten remote history requires collaborators to re-clone. Remote ownership/private status and collaborator list must be rechecked immediately before publishing cleaned refs.
+- **Blocking public visibility:** GitHub still retains a queryable old commit object with the former personal email. Force-push does not itself erase cached/unreferenced server data. The owner should request server-side removal through [GitHub Support](https://support.github.com/) while keeping this repository private, then recheck the old object. Support eligibility is determined by GitHub, not guaranteed here. If it cannot be purged, publishing a separate newly created clean repository is an alternative requiring an explicit owner decision; no repository deletion/recreation is authorized or performed. [GitHub's official sensitive-data cleanup guidance](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository) documents this distinction.
 
 ## Recommended version
 
@@ -64,7 +71,7 @@ Release-notes draft: Managed app tracking and quotas; unlimited daily +15-minute
 
 ## Before making repository public
 
-Owner review is still required. Do not upload local backup material, recreate the old history, publish raw captures or change visibility as part of this cleanup. Review license/provenance notes and unresolved device validation; choose release metadata/signing separately.
+Repository preparation/build validation is complete, but **not yet cleared for public visibility** because of GitHub's retained old object. Owner review and resolution of that server-side item are required. Do not upload local backup material, recreate the old history, publish raw captures or change visibility as part of this cleanup. Review license/provenance notes and unresolved device validation; choose release metadata/signing separately.
 
 - [x] No APK in cleaned history
 - [x] No raw device screenshots in cleaned history
@@ -76,6 +83,7 @@ Owner review is still required. Do not upload local backup material, recreate th
 - [x] LICENSE present
 - [x] CHANGELOG present
 - [x] PROJECT_STATE present
-- [ ] Fresh clone builds
+- [x] Fresh clone builds
 - [x] Freshly executed tests pass
-- [x] Repository still private (verified during initial audit; recheck before finish)
+- [x] Repository still private (verified again after remote update)
+- [ ] GitHub old private objects/cache no longer addressable — still blocked; owner action required

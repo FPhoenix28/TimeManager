@@ -68,7 +68,7 @@ Clone the repository, open it in Android Studio, let Gradle sync, and select you
 .\gradlew.bat :app:assembleRelease
 ```
 
-On macOS/Linux use `./gradlew`. Debug builds are development-signed; the current Release build produces an **unsigned** APK and is not a ready-to-publish store artifact. No APK is committed. The current `versionName=1.0` is legacy build metadata, not a published release or a stability guarantee.
+On macOS/Linux use `sh ./gradlew` (the wrapper currently has no executable bit). Debug builds are development-signed; the current Release build produces an **unsigned** APK and is not a ready-to-publish store artifact. No APK is committed. The current `versionName=1.0` is legacy build metadata, not a published release or a stability guarantee.
 
 Host unit tests do not install anything on a phone. Read [DEVICE_SAFETY.md](DEVICE_SAFETY.md) before device testing. In particular, do not run the default `connectedDebugAndroidTest` workflow on the user's vivo X200s: its cleanup is unsafe for persistent user data.
 

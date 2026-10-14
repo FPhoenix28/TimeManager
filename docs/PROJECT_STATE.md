@@ -70,7 +70,7 @@ Key modules: `UsageMonitorService`, `TimeManagerAccessibilityService`, `Interven
 
 ## Testing
 
-Latest completed product validation before cleanup: **125 Debug JVM tests, zero failures**, Debug/Release builds; selected dark-mode portrait UI and navigation checks on vivo X200s / Android 16. Older reports retain their own date-specific counts and limitations. This cleanup's fresh execution results are recorded separately in [readiness report](OPEN_SOURCE_READINESS_REPORT.md).
+Latest host validation on 2026-10-14: **27 suites / 125 Debug JVM tests, zero failures/errors/skips**, Debug/Release builds and todo migration check, repeated successfully from an independent remote fresh clone with build/configuration caching disabled. This cleanup performed no device test. Latest earlier device evidence covers selected dark-mode portrait UI and navigation on vivo X200s / Android 16. Older reports retain their own date-specific counts and limitations. Full scope and the remaining publication hold are in [readiness report](OPEN_SOURCE_READINESS_REPORT.md).
 
 ## Known limitations
 

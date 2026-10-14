@@ -20,6 +20,6 @@
 
 - Added public-facing documentation, Apache-2.0 licensing, contribution guidance and issue templates.
 - Retired local task logs, preserved sanitized test conclusions and excluded raw device artifacts and install packages.
-- Prepared a separate history rewrite to remove private identifiers, personal commit email and raw test artifacts.
+- Rewrote public branch history in a separate mirror to remove private identifiers, personal commit email and raw test artifacts; clean fresh-clone builds passed. Publication remains on hold until GitHub's retained old objects are addressed.
 
 These entries summarize the existing implementation and this repository cleanup; they do not imply that these product changes were all made during the cleanup. Earlier commit messages mention `v0.1 stable` and `stable 1.1`, but there are no release tags. Exact historical SemVer boundaries are not reconstructed.
