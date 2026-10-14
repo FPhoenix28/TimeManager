@@ -8,13 +8,13 @@ Keep both repositories private. Never delete, archive or transfer the old reposi
 
 ## Ordered tasks and acceptance
 
-1. Verify clean local state, expected cleaned master, exact owner/private/default branch, unused archive name and fresh destination directories. Stop on mismatch.
-2. Rename the old repository to `TimeManager-private-archive`; verify its unchanged repository identity, private visibility and master. Create an independent empty private `TimeManager` with no initialized files/wiki.
-3. Clone only reachable archive master into a new candidate directory. Audit all reachable blobs, commit metadata, required docs and local links; the old pre-cleanup commit must be absent.
-4. Review runtime/resource assets. Replace the illustrative branded image with a generic safe image if possible; otherwise remove it and its README display. Remove the original image from candidate history so the new repository does not distribute it through older commits. Preserve all product/build/safety trees.
-5. Configure only the new candidate origin and push only master normally. Verify distinct repository IDs, private visibility, master-only/no-tag/no-release state and old-commit HTTP 404 specifically in the new repository.
-6. Check the new server tree/commit metadata, then make a second independent clone. Run host tests, Debug/Release builds with both caches disabled, migration verification and whitespace checks; record actual XML counts.
-7. Update readiness/project repository status and final migration report, push documentation normally, recheck final refs/identity/privacy and stop for owner review. No automatic Public transition.
+- [x] Verify clean local state, expected cleaned master, exact owner/private/default branch, unused archive name and fresh destination directories. Stop on mismatch.
+- [x] Rename the old repository to `TimeManager-private-archive`; verify its unchanged repository identity, private visibility and master. Create an independent empty private `TimeManager` with no initialized files/wiki.
+- [x] Clone only reachable archive master into a new candidate directory. Audit all reachable blobs, commit metadata, required docs and local links; the old pre-cleanup commit must be absent.
+- [x] Review runtime/resource assets. Generic illustration generation failed; used the approved removal fallback and removed the original image from candidate history. Product/build/safety trees preserved.
+- [x] Configure only the new candidate origin and push only master normally. Verify distinct repository IDs, private visibility, master-only/no-tag/no-release state and old-commit HTTP 404 specifically in the new repository.
+- [x] Check the new server tree/commit metadata, then make a second independent clone. Actual result: 27 suites / 125 tests, zero failures/errors/skips, Debug/Release builds and migration passed; caches disabled.
+- [x] Update readiness/project repository status and final migration report; final documentation is pushed normally and verified against the same private repository identity before owner handoff. No automatic Public transition.
 
 ## Completion
 

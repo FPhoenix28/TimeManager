@@ -2,6 +2,8 @@
 
 Reviewed against source on 2026-10-14. This document replaces the retired `tasks/plan.md` / `tasks/todo.md` as the current-state entry point. Historical plans and test counts are not current product guarantees.
 
+Repository prepared for public open-source release. The independent `FPhoenix28/TimeManager` candidate remains Private pending owner review; the old private archive is separate and must not be published. Migration changed documentation assets/history, not product behavior. See [final migration report](FINAL_PUBLIC_MIGRATION_REPORT.md).
+
 ## Product
 
 TimeManager is a personal Android digital-wellbeing application built around **intentional friction**, not an unbreakable app lock. Users select managed apps, choose limits, encounter deliberate pauses and can extend daily allowance. Missing capabilities or failures generally degrade open rather than trap a user.
@@ -70,7 +72,7 @@ Key modules: `UsageMonitorService`, `TimeManagerAccessibilityService`, `Interven
 
 ## Testing
 
-Latest host validation on 2026-10-14: **27 suites / 125 Debug JVM tests, zero failures/errors/skips**, Debug/Release builds and todo migration check, repeated successfully from an independent remote fresh clone with build/configuration caching disabled. This cleanup performed no device test. Latest earlier device evidence covers selected dark-mode portrait UI and navigation on vivo X200s / Android 16. Older reports retain their own date-specific counts and limitations. Full scope and the remaining publication hold are in [readiness report](OPEN_SOURCE_READINESS_REPORT.md).
+Latest host validation on 2026-10-14: **27 suites / 125 Debug JVM tests, zero failures/errors/skips**, Debug/Release builds and todo migration check, repeated successfully from a fresh clone of the NEW independent repository with build/configuration caching disabled (3m 5s, all 96 tasks executed). This migration performed no device test. Latest earlier device evidence covers selected dark-mode portrait UI and navigation on vivo X200s / Android 16. Older reports retain their own date-specific counts and limitations. Full scope and pending owner publication review are in [readiness report](OPEN_SOURCE_READINESS_REPORT.md).
 
 ## Known limitations
 

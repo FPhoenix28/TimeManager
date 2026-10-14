@@ -28,7 +28,12 @@ The exact private `FPhoenix28/TimeManager` remote was rechecked immediately befo
 - New repository: `FPhoenix28/TimeManager`, ID **1418544365**, independently created empty and **Private pending owner review**. No fork/template import, initialized README/license/gitignore, wiki, release or tag was created.
 - Candidate came from a fresh, single-branch archive clone at the approved baseline. Initial all-ref audit: 439 file blobs, noreply author/committer metadata, no old personal identifier, raw artifacts or known pre-cleanup commit in its reachable object set.
 - The branded design image was removed from candidate history using git-filter-repo; all product/build/safety files remain identical. Documentation/image attribution was updated. The previous private repository's cached objects are not copied as candidate refs.
-- First push, new-repository old-commit isolation, server checks and independent new-repository build execution are pending at this checkpoint. Migration is not considered complete until those checks actually pass.
+- Only `master` was pushed normally from the isolated candidate; no mirror, backup/archive refs, tags or releases were pushed. The first-push/build revision is `e980d4b79f0958f5f7453f88f05fdf90b9be4449`; subsequent completion-report changes are documentation-only.
+- Authenticated GitHub checks confirmed distinct repository IDs, both Private, default `master`, and only `master` / zero tags / zero releases in the new repository. The new repository lists only the owner as collaborator.
+- **Old private archive:** the known pre-cleanup commit still returns HTTP **200**. Its old objects are not claimed purged, and it must remain private.
+- **New independent public candidate:** that same pre-cleanup commit returns HTTP **404**, with the current new commit returning HTTP 200 as a positive control. This verifies isolation under the new repository identity, not deletion from the old server cache.
+- Server tree review covered 247 files and all 18 commits at the build revision; author/committer addresses are the approved noreply address. The independent clone's complete history scan inspected **445 reachable file blobs**, with no removed raw artifacts, branded design image, old private identifiers, host paths or obvious credential candidates. `git fsck --full`, local Markdown links and product/build/safety-tree comparisons passed.
+- The second fresh clone from the NEW repository passed tests, Debug/Release builds and migration checks as recorded below. Both repositories remain Private pending owner review; no visibility change or old-repository deletion was performed.
 
 ## Privacy audit
 
@@ -64,12 +69,20 @@ Fresh-clone command: `gradlew.bat :app:testDebugUnitTest :app:assembleDebug :app
 
 Native-library stripping reported its existing packaging warning, not a build failure. No connected instrumentation or phone operation occurred. Linux/macOS builds were not executed; README uses `sh ./gradlew` because the preserved wrapper lacks an executable bit.
 
+### Independent NEW-repository validation
+
+A second fresh network clone of `FPhoenix28/TimeManager` was made in `../TimeManager-public-validation-2026-10-14/` at `e980d4b79f0958f5f7453f88f05fdf90b9be4449`. Before building, Git was clean and `local.properties`, `.idea`, `.gradle` and `app/build` were absent. The SDK/runtime were supplied through the ordinary host environment; no old repository, private backup, previous project build directory, secret file or local.properties was used for this build. Normal shared dependency/toolchain installations were available.
+
+Executed: `gradlew.bat :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease --no-build-cache --no-configuration-cache --rerun-tasks`.
+
+Actual result: **BUILD SUCCESSFUL in 3m 5s; 96 actionable tasks, 96 executed.** Parsed this run's JUnit XML: **27 suites, 125 tests, 0 failures, 0 errors, 0 skipped**. `tools/Verify-TodoMigration.ps1` and `git diff --check` passed. Git stayed clean; local.properties remained absent. Debug and unsigned Release APKs exist only in ignored local build output and were not installed. Later report commits change documentation only, not the built product tree. See [final migration report](FINAL_PUBLIC_MIGRATION_REPORT.md).
+
 ## Remaining risks
 
 - Branded documentation imagery has been removed. Launcher/template and Material-style vector attribution is documented after asset inspection; project licensing does not transfer Google's marks or substitute for final binary-distribution review.
 - Android backup is currently enabled; app-local data is not claimed to be excluded from OS backup.
 - Cross-vendor/permission/large-font/landscape/incoming-call validation is incomplete; see OPEN_ISSUES. No store-policy approval or production signing was performed.
-- Rewritten remote history requires collaborators to re-clone. Remote ownership/private status and collaborator list must be rechecked immediately before publishing cleaned refs.
+- Development should use the independent candidate clone, not the old archive checkout. The original checkout's origin points to the private archive. The new repository's private status, identity, refs and owner-only collaborator list were verified before completion; publishing later remains the owner's manual decision.
 - The old private archive can still retain cached/unreferenced objects; it must not be published or used as a mirror-push source. New-repository isolation is checked against that distinct repository ID and the old pre-cleanup commit. This does not claim that the old server cache was purged. [GitHub's cleanup guidance](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository) explains why rewriting an old repository alone is not a purge.
 
 ## Recommended version
@@ -80,7 +93,7 @@ Release-notes draft: Managed app tracking and quotas; unlimited daily +15-minute
 
 ## Before making repository public
 
-The independent candidate stays private while migration isolation and new-repository fresh-build checks complete, then awaits owner review. Do not upload private backups, merge old history, mirror-push the archive, publish raw captures or automatically change visibility. The old private archive is not a public release source. Review attribution notes and unresolved device validation; choose release metadata/signing separately.
+The independent candidate has passed migration isolation and new-repository fresh-build checks and remains private pending owner review. Do not upload private backups, merge old history, mirror-push the archive, publish raw captures or automatically change visibility. The old private archive is not a public release source. Review attribution notes and unresolved device validation; choose release metadata/signing separately.
 
 - [x] No APK in cleaned history
 - [x] No raw device screenshots in cleaned history
@@ -96,5 +109,5 @@ The independent candidate stays private while migration isolation and new-reposi
 - [x] Freshly executed tests pass
 - [x] Repository still private (verified again after remote update)
 - [x] Old repository renamed and retained Private; cached old objects there are not claimed purged
-- [ ] Old pre-cleanup commit is not addressable in the NEW independent TimeManager repository
-- [ ] Fresh clone of the NEW independent repository passes tests/builds/migration
+- [x] Old pre-cleanup commit is not addressable in the NEW independent TimeManager repository (authenticated HTTP 404; new-head positive control HTTP 200)
+- [x] Fresh clone of the NEW independent repository passes tests/builds/migration
