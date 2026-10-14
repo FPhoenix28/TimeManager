@@ -232,6 +232,12 @@ Bug、想法和改进建议都欢迎通过 GitHub Issues 提出。
 - [更新记录](CHANGELOG.md)
 - [第三方资源说明](docs/THIRD_PARTY_NOTICES.md)
 
+## 🤖 开发说明
+
+TimeManager 由 **FPhoenix28** 发起、设计并维护。
+
+开发过程中使用 **OpenAI Codex** 和 **ChatGPT** 辅助代码实现、调试、代码审查与文档整理。项目的产品方向、功能取舍、测试验证，以及最终合并到仓库中的修改，均由项目维护者负责。
+
 ## 📄 License
 
 Copyright 2026 FPhoenix28.

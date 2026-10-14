@@ -227,6 +227,12 @@ Bug reports, ideas and improvements are welcome through GitHub Issues.
 - [Changelog](CHANGELOG.md)
 - [Third-party notices](docs/THIRD_PARTY_NOTICES.md)
 
+## 🤖 Development note
+
+TimeManager is initiated, designed and maintained by **FPhoenix28**.
+
+**OpenAI Codex** and **ChatGPT** are used as AI-assisted development tools for implementation, debugging, code review and documentation. Product direction, feature decisions, testing and verification, and the final changes merged into this repository remain the maintainer's responsibility.
+
 ## 📄 License
 
 Copyright 2026 FPhoenix28.
