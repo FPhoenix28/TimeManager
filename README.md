@@ -190,6 +190,19 @@ More details:
 
 ### Build
 
+#### Build variants
+
+TimeManager uses one shared codebase with two build identities:
+
+| Variant | App name | Application ID |
+| --- | --- | --- |
+| Debug | TimeManager Dev | `com.example.timemanager.debug` |
+| Release | TimeManager | `com.example.timemanager` |
+
+Both variants share the core source code in `app/src/main/`. Debug-only resources and development configuration live under `app/src/debug/`. The Debug APK is intended for development and device testing; generated APKs are build artifacts and are not committed to the source repository.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow.
+
 Requirements:
 
 - Android SDK Platform **37**

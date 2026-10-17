@@ -195,7 +195,22 @@ InterventionCoordinator
 - [架构概览](docs/architecture/OVERVIEW.md)
 - [测试报告](docs/testing/README.md)
 
-### 构建要求
+### 构建
+
+#### 构建版本
+
+TimeManager 使用同一套核心源码，通过两个独立的构建身份区分开发测试与日常使用：
+
+| 构建 | 应用名称 | Application ID |
+| --- | --- | --- |
+| Debug | TimeManager Dev | `com.example.timemanager.debug` |
+| Release | TimeManager | `com.example.timemanager` |
+
+两个版本共享 `app/src/main/` 中的核心源码，只有少量 Debug 专属资源和开发配置位于 `app/src/debug/`。Debug APK 仅用于开发和真机测试；编译生成的 APK 属于构建产物，不提交到源码仓库。
+
+完整开发流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+#### 构建要求
 
 - Android SDK Platform **37**
 - 最低支持 API **26**
