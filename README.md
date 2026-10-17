@@ -150,7 +150,7 @@ Some areas still need broader validation, including:
 
 👉 [See known open issues](docs/OPEN_ISSUES.md)
 
-There is **no signed, ready-to-install Release APK yet**. For now, developers can build the project from source; non-developers may prefer to wait for a future Release.
+This repository **does not include a signed, ready-to-install Release APK**. For now, developers can build the project from source; non-developers may prefer to wait for a future Release.
 
 ---
 
