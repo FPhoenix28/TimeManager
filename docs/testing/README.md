@@ -1,11 +1,13 @@
 # Sanitized engineering reports
 
-Follow the [development workflow](../DEVELOPMENT_WORKFLOW.md) and [DEVICE_SAFETY](../../DEVICE_SAFETY.md). New device runs use the [DEVELOPMENT_TEST_REPORT template](DEVELOPMENT_TEST_REPORT_TEMPLATE.md) and target TimeManager Dev (`com.example.timemanager.debug`), not the user's stable app.
+Follow the [development workflow](../DEVELOPMENT_WORKFLOW.md) and [DEVICE_SAFETY](../../DEVICE_SAFETY.md). New device runs use the [DEVELOPMENT_TEST_REPORT template](DEVELOPMENT_TEST_REPORT_TEMPLATE.md) and target TimeManager Dev (`com.fphoenix28.timemanager.debug` for v0.9.0+), not the user's stable app. Pre-v0.9.0 reports retain their former application IDs as historical evidence; those IDs are not current default targets.
 
 These are summaries of recorded validation. Raw screenshots/APKs and exact device identifiers stay in private local storage, outside Git. Older vivo X200s / Android 16 reports naming `com.example.timemanager` describe historical tests, not permission to use that stable package for new testing. Retain their evidence and incident conclusions; current workflow rules govern new actions.
 
 | Current reference | Scope |
 | --- | --- |
+| [v0.9.0 signed RC / freeze acceptance](2026-10-17-v0.9.0-signed-rc.md) | Owner confirms signed Release installation, smoke test and acceptance PASS; 159 host tests reused without later runtime changes. Local freeze commit/rebuild authorized, not remote publication. Earlier signing failure retained as historical evidence. |
+| [v0.9.0 preparation](2026-10-17-v0.9.0-release-preparation.md) | New application identities, 159 tests, build/manifest audit and initial unsigned-signing configuration checks. |
 | [Accepted Session fix / stable update / Git handoff](2026-10-17-stable-update-git-handoff.md) | Owner accepted the latest Session fix; 155 host tests reused, Release rebuilt, daily cover-update returned Success. No post-install functional test; owner authorized two local commits, not push/master integration. |
 | [Session HOME confirmation](2026-10-17-session-home-confirmation.md) | Actual launcher confirmation and explicit Session desktop action; owner accepted. |
 | [Latest Dev regression](2026-10-16-dev-timing-followup.md) | Bounded timing, fallback Session/Daily/+15 and screenshot-only connected HOME/Gate/Continue checks passed; normal Dev/settings restored. Full coverage and owner acceptance remain separate. |

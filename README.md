@@ -196,8 +196,10 @@ TimeManager uses one shared codebase with two build identities:
 
 | Variant | App name | Application ID |
 | --- | --- | --- |
-| Debug | TimeManager Dev | `com.example.timemanager.debug` |
-| Release | TimeManager | `com.example.timemanager` |
+| Debug | TimeManager Dev | `com.fphoenix28.timemanager.debug` |
+| Release | TimeManager | `com.fphoenix28.timemanager` |
+
+Public prerelease preparation targets **v0.9.0** (versionCode 3); Debug is **0.9.0-dev**. Namespace/Kotlin packages remain `com.example.timemanager`. The new application IDs are independent of the former development installation; no old app data migration is included. Historical reports before v0.9.0 may refer to the former applicationId `com.example.timemanager`.
 
 Both variants share the core source code in `app/src/main/`. Debug-only resources and development configuration live under `app/src/debug/`. The Debug APK is intended for development and device testing; generated APKs are build artifacts and are not committed to the source repository.
 
@@ -224,7 +226,7 @@ macOS / Linux:
 sh ./gradlew
 ```
 
-The current Release build produces an **unsigned APK**.
+Without a local `keystore.properties`, Release builds produce an **unsigned APK**, not a distributable signed release. A maintainer signing key is required for the public APK. To configure it later, copy [keystore.properties.example](keystore.properties.example) to the ignored local file and supply your own keystore details; incomplete configuration fails clearly. Never commit keys or passwords.
 
 Host unit tests do not install anything on a phone. Read [DEVICE_SAFETY.md](DEVICE_SAFETY.md) before device testing.
 

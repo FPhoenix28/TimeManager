@@ -11,7 +11,7 @@ class FocusEnforcementPolicyTest {
         mode = FocusModeType.FOCUS,
         startTimeMillis = 1_000L,
         endTimeMillis = 61_000L,
-        blockedPackages = setOf("app.blocked", "com.example.timemanager"),
+        blockedPackages = setOf("app.blocked", OWN_APP),
     )
 
     @Test fun selectedAppIsBlockedDuringFocus() {
@@ -82,6 +82,6 @@ class FocusEnforcementPolicyTest {
     }
 
     private companion object {
-        const val OWN_APP = "com.example.timemanager"
+        const val OWN_APP = "com.fphoenix28.timemanager"
     }
 }

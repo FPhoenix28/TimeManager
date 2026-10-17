@@ -9,8 +9,9 @@ import org.junit.Test
 class DebugTimeConfigTest {
     @Test
     fun debugBuildHasIndependentIdentity() {
-        assertEquals("com.example.timemanager.debug", BuildConfig.APPLICATION_ID)
-        assertEquals("1.0.1-dev", BuildConfig.VERSION_NAME)
+        assertEquals("com.fphoenix28.timemanager.debug", BuildConfig.APPLICATION_ID)
+        assertEquals("0.9.0-dev", BuildConfig.VERSION_NAME)
+        assertEquals(3, BuildConfig.VERSION_CODE)
     }
 
     @Test

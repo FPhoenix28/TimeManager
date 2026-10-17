@@ -19,7 +19,7 @@
 ## Debug APK / device / installation
 
 - APK metadata tool and output summary:
-- Package ID: must be `com.example.timemanager.debug`.
+- Package ID: must be `com.fphoenix28.timemanager.debug` for v0.9.0+ builds.
 - Display name: must be TimeManager Dev.
 - testOnly: true / false / unknown (reason if unknown).
 - Device model / Android version (generic identifier only):

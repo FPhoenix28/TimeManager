@@ -39,6 +39,22 @@ class DeepFocusEnforcementPolicyTest {
         }
     }
 
+    @Test fun newPublicVariantsOnlyExemptTheirOwnRuntimePackage() {
+        val release = "com.fphoenix28.timemanager"
+        val dev = "$release.debug"
+        for ((own, other) in listOf(release to dev, dev to release)) {
+            val runtimeEssentials = essentials.copy(ownPackage = own)
+            assertEquals(DeepFocusDisposition.ALLOW, DeepFocusEnforcementPolicy.evaluate(
+                state, own, "com.example.timemanager.MainActivity", runtimeEssentials,
+                keyguardLocked = false, overlayPermissionGranted = true, nowMillis = 10_000L,
+            ))
+            assertEquals(DeepFocusDisposition.BLOCK, DeepFocusEnforcementPolicy.evaluate(
+                state, other, "com.example.timemanager.MainActivity", runtimeEssentials,
+                keyguardLocked = false, overlayPermissionGranted = true, nowMillis = 10_000L,
+            ))
+        }
+    }
+
     @Test fun defaultDialerPackageIsNotBlanketAllowed() {
         assertEquals(
             DeepFocusDisposition.BLOCK,

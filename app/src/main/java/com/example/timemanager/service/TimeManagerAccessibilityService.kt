@@ -26,6 +26,7 @@ import com.example.timemanager.ui.focus.DeepFocusOverlayController
 import com.example.timemanager.ui.focus.FocusBlockedOverlayController
 import com.example.timemanager.config.InterventionRuntime
 import com.example.timemanager.BuildConfig
+import com.example.timemanager.MainActivity
 import com.example.timemanager.permissions.PermissionHealthManager
 import com.example.timemanager.domain.intervention.EntryCheckResult
 import com.example.timemanager.domain.intervention.InterventionPriority
@@ -144,7 +145,7 @@ class TimeManagerAccessibilityService : AccessibilityService() {
         val foregroundPackage = event.packageName?.toString() ?: return
         val foregroundClass = event.className?.toString()
         // Own overlay and transient system windows are not app-exit/entry boundaries.
-        val transient = foregroundPackage == packageName && foregroundClass != "$packageName.MainActivity" ||
+        val transient = isOwnOverlayWindow(foregroundPackage, foregroundClass, packageName) ||
             foregroundPackage == deepFocusEssentials.inputMethodPackage ||
             foregroundPackage in deepFocusEssentials.systemUiPackages
         val previousStable = coordinator.stableForegroundPackage()
@@ -464,3 +465,7 @@ class TimeManagerAccessibilityService : AccessibilityService() {
         const val DEBOUNCE_MILLIS = 700L
     }
 }
+
+/** Application identity may differ from the retained namespace/class path. */
+internal fun isOwnOverlayWindow(eventPackage: String, eventClass: String?, ownPackage: String): Boolean =
+    eventPackage == ownPackage && eventClass != MainActivity::class.java.name

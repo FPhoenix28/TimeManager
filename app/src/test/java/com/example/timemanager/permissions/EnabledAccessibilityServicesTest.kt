@@ -6,8 +6,8 @@ import org.junit.Test
 
 class EnabledAccessibilityServicesTest {
     private val service = "com.example.timemanager.service.TimeManagerAccessibilityService"
-    private val dev = "com.example.timemanager.debug"
-    private val stable = "com.example.timemanager"
+    private val dev = "com.fphoenix28.timemanager.debug"
+    private val stable = "com.fphoenix28.timemanager"
 
     @Test fun enabledDevUsesItsOwnPackageAndTheSharedClassName() {
         assertTrue(isAccessibilityComponentEnabled("$dev/$service", dev, service))
@@ -22,6 +22,9 @@ class EnabledAccessibilityServicesTest {
 
     @Test fun listAndShortComponentNamesAreSupported() {
         assertTrue(isAccessibilityComponentEnabled("other/other.Service:$dev/$service", dev, service))
-        assertTrue(isAccessibilityComponentEnabled("$stable/.service.TimeManagerAccessibilityService", stable, service))
+        assertTrue(isAccessibilityComponentEnabled("$stable/$service", stable, service))
+        assertFalse(isAccessibilityComponentEnabled("$stable/.service.TimeManagerAccessibilityService", stable, service))
+        val fixturePackage = "fixture.example"
+        assertTrue(isAccessibilityComponentEnabled("$fixturePackage/.Service", fixturePackage, "$fixturePackage.Service"))
     }
 }

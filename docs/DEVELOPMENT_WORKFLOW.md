@@ -32,10 +32,12 @@ git log -1 --oneline
 
 | 构建 | applicationId | 名称 | 日常用途 |
 | --- | --- | --- | --- |
-| Debug | `com.example.timemanager.debug` | TimeManager Dev | Run、开发验证、反复更新 |
-| Release identity | `com.example.timemanager` | TimeManager | 用户另行决定更新的日常稳定版 |
+| Debug | `com.fphoenix28.timemanager.debug` | TimeManager Dev | Run、开发验证、反复更新 |
+| Release identity | `com.fphoenix28.timemanager` | TimeManager | 用户另行决定安装 / 更新的日常版 |
 
 namespace / Kotlin package 保持 `com.example.timemanager`。Debug 的 applicationIdSuffix 为 `.debug`，versionNameSuffix 为 `-dev`。Android 按应用隔离数据和权限；不要人为共享两包的 Room、DataStore、SharedPreferences 或权限状态。
+
+v0.9.0 发布准备使用 versionCode 3、Release 0.9.0 / Debug 0.9.0-dev。正式签名可从已忽略的本地 `keystore.properties` 读取，字段见根目录示例；没有文件时 Release 仍为 unsigned，文件不完整时报错，不自动创建密钥。历史报告中的 `com.example.timemanager` 为旧身份；新身份不覆盖旧安装，也不自动迁移旧数据。
 
 安装前用 `aapt2 dump badging <apk>`、`aapt` 或 `apkanalyzer` 核实**实际 APK**：package 必须为 Dev，label 必须为 TimeManager Dev。不能核实就停止，不能只凭 APK 文件名、源码 namespace 或旧报告推断。
 
@@ -81,4 +83,4 @@ Dev 首次使用需要自己的 Usage Access、Overlay、Notification、Accessib
 
 ## 7. 手机稳定版独立节奏
 
-源码验收、commit、可选 push/master 集成即可结束一轮开发。只有用户另行发起“把这一版同步到稳定版”“更新原版 APK”等请求，才考虑更新 `com.example.timemanager`，并重新按设备安全规则确认范围和数据影响。不要把稳定版更新、发布或 GitHub Release 接到日常测试循环末尾。
+源码验收、commit、可选 push/master 集成即可结束一轮开发。只有用户另行发起“把这一版同步到稳定版”“更新原版 APK”等请求，才考虑安装 / 更新 `com.fphoenix28.timemanager`，并重新按设备安全规则确认范围和数据影响。旧身份不自动获得写授权。不要把稳定版更新、发布或 GitHub Release 接到日常测试循环末尾。

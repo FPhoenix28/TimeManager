@@ -7,7 +7,7 @@
 默认允许安全真机测试，不再默认只读。满足以下条件即可继续正常开发，无需每一步向用户确认：
 
 1. 目标 serial / 型号已经核实为当前开发用 vivo X200s。
-2. 日常包相关写操作目标严格等于 Debug 构建的最终 applicationId：`com.example.timemanager.debug`（TimeManager Dev）。
+2. 日常包相关写操作目标严格等于 Debug 构建的最终 applicationId：`com.fphoenix28.timemanager.debug`（TimeManager Dev）。
 3. 不清除用户数据，不影响其它 App。
 4. 工具全部隐式动作同样满足上述边界。
 
@@ -15,7 +15,7 @@
 
 - `adb devices`、logcat（不清空）、getprop、pm path、包/Activity/Service/Window/Display 状态检查。
 - 普通主机 build、Debug APK `install -r -t` 安装或覆盖更新。
-- 显式启动 Dev Activity/Service、启动/停止或 `am force-stop com.example.timemanager.debug`、重启后检查恢复行为。
+- 显式启动 Dev Activity/Service、启动/停止或 `am force-stop com.fphoenix28.timemanager.debug`、重启后检查恢复行为。
 - TimeManager 的普通 Debug、UI、Overlay 和 Accessibility 功能验证；UI 输入限定明确的测试交互，不操作其它 App 的内容。
 - 截图、横竖屏切换；记录并恢复测试前的显示设置。
 - TimeManager app-specific 目录内，本轮明确创建的测试文件的读写和清理，按第 4 节执行。
@@ -26,8 +26,10 @@
 
 | 角色 | 应用 | applicationId | 默认用途 |
 | --- | --- | --- | --- |
-| 开发测试版 | TimeManager Dev | `com.example.timemanager.debug` | Android Studio Run、Codex 测试、可重复覆盖安装 |
-| 手机日常稳定版 | TimeManager | `com.example.timemanager` | 用户长期使用，不是默认实验环境 |
+| 开发测试版 | TimeManager Dev | `com.fphoenix28.timemanager.debug` | Android Studio Run、Codex 测试、可重复覆盖安装 |
+| 正式 / 日常版身份 | TimeManager | `com.fphoenix28.timemanager` | 用户另行选择安装，不是默认实验环境 |
+
+以上是 v0.9.0 起的新身份，不代表已经安装在手机上。旧开发安装 `com.example.timemanager` / `com.example.timemanager.debug` 的历史报告和数据保持原状；它们不属于当前构建的默认设备写授权，本轮不迁移、不卸载、不清理。namespace / Kotlin 类路径仍为 `com.example.timemanager`，不是设备写操作的目标包名。
 
 两个包的数据、Usage Access、Overlay、通知、Accessibility 授权各自独立。Dev 首次安装单独授权，后续 `install -r -t` 尽量保留 Dev 自身状态；不能借用或重置稳定版权限来完成 Dev 测试。
 
@@ -46,7 +48,7 @@
 
 每轮设备测试开始时内部完成；设备连接、目标或构建变体变化后重新核实：
 
-1. 从 `app/build.gradle(.kts)` 读取最终 applicationId；用 `aapt2` / `aapt` / `apkanalyzer` 等 SDK 工具核实待装 APK 的 package=`com.example.timemanager.debug`、label=TimeManager Dev。工具不可用、无法确认或不一致时停止，不能凭文件名或 namespace 猜测。
+1. 从 `app/build.gradle(.kts)` 读取最终 applicationId；用 `aapt2` / `aapt` / `apkanalyzer` 等 SDK 工具核实待装 APK 的 package=`com.fphoenix28.timemanager.debug`、label=TimeManager Dev。工具不可用、无法确认或不一致时停止，不能凭文件名或 namespace 猜测。
 2. 执行 `adb devices -l`，核对开发用 vivo X200s 的 serial、型号、连接状态。V2458A 是已知型号记录，不替代现场核实。
 3. 所有 ADB 设备命令显式使用 `adb -s <已核实serial>`。存在多个设备时只在目标能够明确核实时继续；不能确定目标则停止，不使用默认设备。
 4. 通过 `pm path` / `dumpsys package` 核实 TimeManager 安装状态。
@@ -87,7 +89,7 @@
 
 ## 5. 安装、重启与回退
 
-通过内部 Preflight 后可直接执行 `adb -s <serial> install -r -t <明确Debug APK路径>`，仅安装 `com.example.timemanager.debug`，预计保留已有 Dev 数据，不覆盖正式应用。`-t` 是接受 Android Studio testOnly Debug APK 的正常参数，不关闭 testOnly，也不使用 `android.injected.testOnly=false`。Dev 的普通 `am start`、启动/停止 Service、force-stop 和重启测试无需额外确认。
+通过内部 Preflight 后可直接执行 `adb -s <serial> install -r -t <明确Debug APK路径>`，仅安装 `com.fphoenix28.timemanager.debug`，预计保留该新 Dev 身份自身已有数据，不覆盖正式应用或旧开发包。`-t` 是接受 Android Studio testOnly Debug APK 的正常参数，不关闭 testOnly，也不使用 `android.injected.testOnly=false`。Dev 的普通 `am start`、启动/停止 Service、force-stop 和重启测试无需额外确认。
 
 安装前提醒用户处理手机上的 USB 安装提示；自安装开始至少等待一分钟，并确认安装成功后才继续设备操作。Release APK 不使用 `-t`；若 Release 被标记为 testOnly，视为构建错误，停止排查，不尝试用 `-t` 安装。
 

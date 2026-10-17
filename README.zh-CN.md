@@ -203,8 +203,10 @@ TimeManager 使用同一套核心源码，通过两个独立的构建身份区�
 
 | 构建 | 应用名称 | Application ID |
 | --- | --- | --- |
-| Debug | TimeManager Dev | `com.example.timemanager.debug` |
-| Release | TimeManager | `com.example.timemanager` |
+| Debug | TimeManager Dev | `com.fphoenix28.timemanager.debug` |
+| Release | TimeManager | `com.fphoenix28.timemanager` |
+
+首个公开预发布版本正在准备为 **v0.9.0**（versionCode 3），Debug 为 **0.9.0-dev**。namespace / Kotlin 包路径仍为 `com.example.timemanager`。新 applicationId 与旧开发安装相互独立，本轮不迁移旧数据；v0.9.0 之前的历史报告可能仍使用旧 applicationId `com.example.timemanager`。
 
 两个版本共享 `app/src/main/` 中的核心源码，只有少量 Debug 专属资源和开发配置位于 `app/src/debug/`。Debug APK 仅用于开发和真机测试；编译生成的 APK 属于构建产物，不提交到源码仓库。
 
@@ -231,7 +233,7 @@ macOS / Linux：
 sh ./gradlew
 ```
 
-当前 Release 构建生成的是**未签名 APK**。
+没有本地 `keystore.properties` 时，Release 构建生成**未签名 APK**，不能当作正式签名安装包发布。公开 APK 需要维护者自己的正式签名密钥。以后可复制 [keystore.properties.example](keystore.properties.example) 为已忽略的本地配置并自行填写；配置不完整时构建会明确报错。密钥和密码均不得提交到仓库。
 
 主机单元测试不会操作手机。进行真机测试前请阅读 [DEVICE_SAFETY.md](DEVICE_SAFETY.md)。
 

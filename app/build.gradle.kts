@@ -1,7 +1,25 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
+}
+
+val releaseSigningFile = rootProject.file("keystore.properties")
+val releaseSigningProperties = Properties()
+if (releaseSigningFile.exists()) {
+    releaseSigningFile.inputStream().use { releaseSigningProperties.load(it) }
+    val missingKeys = listOf("storeFile", "storePassword", "keyAlias", "keyPassword").filter {
+        releaseSigningProperties.getProperty(it).isNullOrBlank()
+    }
+    require(missingKeys.isEmpty()) {
+        "Incomplete keystore.properties: missing ${missingKeys.joinToString()}. " +
+            "Provide all four signing settings or remove the local file for an unsigned build check."
+    }
+} else {
+    logger.lifecycle("Release signing not configured: assembleRelease produces an unsigned APK. " +
+        "A maintainer signing key is required before public APK distribution.")
 }
 
 android {
@@ -11,21 +29,34 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.timemanager"
+        applicationId = "com.fphoenix28.timemanager"
         minSdk = 26
         targetSdk = 37
-        versionCode = 2
-        versionName = "1.0.1"
+        versionCode = 3
+        versionName = "0.9.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        if (releaseSigningFile.exists()) {
+            create("release") {
+                storeFile = rootProject.file(releaseSigningProperties.getProperty("storeFile"))
+                storePassword = releaseSigningProperties.getProperty("storePassword")
+                keyAlias = releaseSigningProperties.getProperty("keyAlias")
+                keyPassword = releaseSigningProperties.getProperty("keyPassword")
+            }
+        }
+    }
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-dev"
         }
         release {
+            if (releaseSigningFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             optimization {
                 enable = false
             }
