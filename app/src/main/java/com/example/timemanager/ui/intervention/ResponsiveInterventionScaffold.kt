@@ -51,6 +51,7 @@ internal fun ResponsiveInterventionScaffold(
     val information = remember {
         movableContentOf<Boolean> { wide ->
             Column(
+                modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.compact),
             ) {
@@ -111,7 +112,7 @@ internal fun ResponsiveInterventionScaffold(
                     }
                 } else {
                     Column(
-                        modifier = Modifier.verticalScroll(portraitScroll).padding(TimeManagerSpacing.large),
+                        modifier = Modifier.fillMaxWidth().verticalScroll(portraitScroll).padding(TimeManagerSpacing.large),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.compact),
                     ) {

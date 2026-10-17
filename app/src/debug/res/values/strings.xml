@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">TimeManager Dev</string>
+    <string name="focus_accessibility_label">TimeManager Dev 辅助服务</string>
+    <string name="focus_accessibility_description">TimeManager Dev 的测试辅助服务：在专注或静心期间识别当前打开的应用，并按你启用的模式将受限应用送回桌面。不会读取页面内容。</string>
+</resources>

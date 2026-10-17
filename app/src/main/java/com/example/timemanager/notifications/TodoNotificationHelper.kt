@@ -11,6 +11,7 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import com.example.timemanager.BuildConfig
 import com.example.timemanager.MainActivity
 import com.example.timemanager.R
 import com.example.timemanager.data.local.TodoEntity
@@ -49,13 +50,13 @@ class TodoNotificationHelper(context: Context) {
             }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         manager.notify(NOTIFICATION_ID, NotificationCompat.Builder(app, CHANNEL)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("TimeManager · 今日待办")
+            .setContentTitle("${app.getString(R.string.app_name)} · 今日待办")
             .setContentText(title).setStyle(NotificationCompat.BigTextStyle().bigText("$title\n$message"))
             .setContentIntent(open).setAutoCancel(true).setPriority(NotificationCompat.PRIORITY_DEFAULT).build())
     }
 
     companion object {
-        const val ACTION_OPEN_TODOS = "com.example.timemanager.action.OPEN_TODOS"
+        const val ACTION_OPEN_TODOS = BuildConfig.APPLICATION_ID + ".action.OPEN_TODOS"
         const val CHANNEL = "todo_reminders"
         // Dedicated space; existing foreground / daily / session / focus IDs remain unchanged.
         const val NOTIFICATION_ID = 50_001

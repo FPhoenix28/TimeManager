@@ -32,7 +32,6 @@ class InterventionOverlayController(context: Context) {
         request: LimitInterventionRequest,
         onExit: () -> Unit,
         onContinue: () -> Unit,
-        onCountdownFinished: () -> Unit = {},
     ): Boolean = withContext(Dispatchers.Main.immediate) {
         Log.d(TAG, "show requested packageName=${request.packageName}")
         if (isOverlayShowing) {
@@ -61,7 +60,6 @@ class InterventionOverlayController(context: Context) {
                             request = request,
                             onExit = onExit,
                             onContinue = onContinue,
-                            onCountdownFinished = onCountdownFinished,
                             todoSummary = todoSummary,
                         )
                     }

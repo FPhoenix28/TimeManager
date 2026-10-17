@@ -26,7 +26,7 @@ class MonitorNotificationHelper(context: Context) {
             CHANNEL_NAME,
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
-            description = CHANNEL_DESCRIPTION
+            description = "显示 ${context.getString(R.string.app_name)} 实时监控的运行状态"
             setShowBadge(false)
         }
         context.getSystemService(NotificationManager::class.java)
@@ -71,9 +71,9 @@ class MonitorNotificationHelper(context: Context) {
                 }
             }
         } else {
-            title = "TimeManager 正在监控"
+            title = "${context.getString(R.string.app_name)} 正在监控"
             message = if (totalTrackedUsageSeconds == null) {
-                "TimeManager正在运行"
+                "${context.getString(R.string.app_name)}正在运行"
             } else {
                 "今日受管理应用使用：${formatReadableDuration(totalTrackedUsageSeconds)}"
             }
@@ -135,7 +135,6 @@ class MonitorNotificationHelper(context: Context) {
     companion object {
         private const val CHANNEL_ID = "usage_monitor_service"
         private const val CHANNEL_NAME = "实时使用监控"
-        private const val CHANNEL_DESCRIPTION = "显示 TimeManager 实时监控的运行状态"
         private const val SECONDS_PER_MINUTE = 60L
         private const val SECONDS_PER_HOUR = 3_600L
         private const val TAG = "ForegroundNotification"

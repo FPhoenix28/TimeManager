@@ -7,12 +7,16 @@ data class PermissionHealthState(
     val notificationGranted: Boolean,
     val overlayGranted: Boolean,
     val accessibilityGranted: Boolean = false,
+    val accessibilityConnected: Boolean = false,
 ) {
+    val accessibilityRuntimeState: AccessibilityRuntimeState get() =
+        AccessibilityRuntimeState.resolve(accessibilityGranted, accessibilityConnected)
+    val canForceHome: Boolean get() = accessibilityRuntimeState == AccessibilityRuntimeState.CONNECTED
     val missingPermissions: Set<AppPermission> get() = buildSet {
         if (!usageAccessGranted) add(AppPermission.USAGE_ACCESS)
         if (!overlayGranted) add(AppPermission.OVERLAY)
         if (!notificationGranted) add(AppPermission.NOTIFICATIONS)
-        if (!accessibilityGranted) add(AppPermission.ACCESSIBILITY)
+        if (!canForceHome) add(AppPermission.ACCESSIBILITY)
     }
     val isHealthy: Boolean get() = missingPermissions.isEmpty()
     // Keep the existing onboarding minimum: Accessibility is an optional enhancement.

@@ -23,6 +23,22 @@ class FocusEnforcementPolicyTest {
         assertFalse(FocusEnforcementPolicy.shouldBlock(focus, OWN_APP, OWN_APP, 10_000L))
     }
 
+    @Test fun ownPackageExclusionUsesEachVariantsRuntimeIdentity() {
+        val dev = "$OWN_APP.debug"
+        val bothSelected = focus.copy(blockedPackages = setOf(OWN_APP, dev))
+
+        assertFalse(FocusEnforcementPolicy.shouldBlock(bothSelected, dev, dev, 10_000L))
+        assertFalse(FocusEnforcementPolicy.shouldBlock(bothSelected, OWN_APP, OWN_APP, 10_000L))
+    }
+
+    @Test fun debugDoesNotMistakeReleasePackageForItself() {
+        val dev = "$OWN_APP.debug"
+        val bothSelected = focus.copy(blockedPackages = setOf(OWN_APP, dev))
+
+        assertTrue(FocusEnforcementPolicy.shouldBlock(bothSelected, OWN_APP, dev, 10_000L))
+        assertTrue(FocusEnforcementPolicy.shouldBlock(bothSelected, dev, OWN_APP, 10_000L))
+    }
+
     @Test fun expiredOffAndReservedModesNeverBlock() {
         assertFalse(FocusEnforcementPolicy.shouldBlock(focus, "app.blocked", OWN_APP, 61_000L))
         assertFalse(

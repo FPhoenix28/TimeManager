@@ -8,6 +8,12 @@ import org.junit.Test
 
 class DebugTimeConfigTest {
     @Test
+    fun debugBuildHasIndependentIdentity() {
+        assertEquals("com.example.timemanager.debug", BuildConfig.APPLICATION_ID)
+        assertEquals("1.0.1-dev", BuildConfig.VERSION_NAME)
+    }
+
+    @Test
     fun debugBuildDefaultsToProductionDurations() {
         assertTrue(BuildConfig.DEBUG)
         assertFalse(BuildTimeConfig.value.debugTimeOverridesEnabled)

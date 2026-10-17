@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import com.example.timemanager.BuildConfig
 import com.example.timemanager.MainActivity
 import com.example.timemanager.R
 import com.example.timemanager.data.model.FocusModeState
@@ -42,7 +43,7 @@ class DeepFocusNotificationHelper(context: Context) {
             NotificationIds.DEEP_FOCUS,
             NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_launcher_foreground)
-                .setContentTitle("TimeManager")
+                .setContentTitle(context.getString(R.string.app_name))
                 .setContentText(message)
                 .setContentIntent(openDeepFocus)
                 .setOngoing(true)
@@ -78,7 +79,7 @@ class DeepFocusNotificationHelper(context: Context) {
             PackageManager.PERMISSION_GRANTED
 
     companion object {
-        const val ACTION_OPEN_DEEP_FOCUS = "com.example.timemanager.action.OPEN_DEEP_FOCUS"
+        const val ACTION_OPEN_DEEP_FOCUS = BuildConfig.APPLICATION_ID + ".action.OPEN_DEEP_FOCUS"
         private const val CHANNEL_ID = "deep_focus_status"
     }
 }

@@ -41,7 +41,6 @@ fun LimitReachedScreen(
     request: LimitInterventionRequest,
     onExit: () -> Unit,
     onContinue: () -> Unit,
-    onCountdownFinished: () -> Unit = {},
     todoSummary: TodoSummary = TodoSummary(),
 ) {
     when (request.type) {
@@ -57,7 +56,6 @@ fun LimitReachedScreen(
             todoSummary = todoSummary,
             onStayHome = onExit,
             onContinue = onContinue,
-            onCountdownFinished = onCountdownFinished,
         )
     }
 }

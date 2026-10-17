@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
+import android.widget.Toast
 import com.example.timemanager.data.model.ForegroundApp
 import com.example.timemanager.data.local.AppDatabase
 import com.example.timemanager.config.BuildTimeConfig
@@ -17,6 +18,9 @@ import com.example.timemanager.domain.intervention.EntryCheckResult
 import com.example.timemanager.domain.intervention.InterventionPriority
 import com.example.timemanager.domain.intervention.MonitorInterventionCommand
 import com.example.timemanager.domain.intervention.SessionReminderMode
+import com.example.timemanager.domain.intervention.InterventionPresentation
+import com.example.timemanager.domain.intervention.InterventionPresentationPolicy
+import com.example.timemanager.domain.intervention.SessionCompletionAction
 import com.example.timemanager.permissions.PermissionHealthManager
 import com.example.timemanager.data.model.SessionGatePhase
 import com.example.timemanager.data.repository.InstalledAppInfoProvider
@@ -200,10 +204,16 @@ class UsageMonitorService : Service() {
 
         detectionJob = serviceScope.launch {
             var queryStartTime = System.currentTimeMillis() - INITIAL_LOOKBACK_MILLIS
+            var lastHealthCheckMillis = 0L
 
             while (isActive) {
                 try {
                     val now = System.currentTimeMillis()
+                    val elapsedNow = android.os.SystemClock.elapsedRealtime()
+                    if (elapsedNow - lastHealthCheckMillis >= PERMISSION_REFRESH_INTERVAL_MILLIS) {
+                        permissionHealthManager.refresh()
+                        lastHealthCheckMillis = elapsedNow
+                    }
                     foregroundAppDetector.detect(queryStartTime, now)?.let(::handleDetectedApp)
                     if (!powerManager.isInteractive) {
                         currentForegroundApp = null
@@ -216,8 +226,7 @@ class UsageMonitorService : Service() {
                         }
                     } else {
                         timingMutex.withLock {
-                            val expired = friction.expireIdleEpisodes()
-                            if (activeInterventionPackageName in expired) dismissActiveIntervention()
+                            friction.expireIdleEpisodes()
                             currentForegroundApp?.let { foregroundApp ->
                                 if (timedForegroundApp != null &&
                                     !coordinator.canTime(checkNotNull(timedForegroundApp).packageName)
@@ -265,6 +274,7 @@ class UsageMonitorService : Service() {
             return
         }
         val pkg = foregroundApp.packageName
+        if (coordinator.isTimingPausedForOverlay()) return
         if (pkg !in trackedPackageNames) {
             if (timedForegroundApp != null) finishTrackedSession()
             else updateIdleNotificationIfNeeded()
@@ -277,7 +287,7 @@ class UsageMonitorService : Service() {
         if (isNewSession) {
             interventionManager.onManagedAppEntered(pkg)
         }
-        // Accessibility disconnect clears runtime admission; retain the existing AppTimer clock.
+        // Capability loss removes admission, not the episode or the AppTimer clock.
         if (isNewSession || friction.snapshot(pkg) == null) {
             friction.beginPhysicalSession(pkg, configuredSeconds)
         } else {
@@ -307,7 +317,10 @@ class UsageMonitorService : Service() {
         evaluation?.let { usageLimitNotifier.notifyIfNeeded(foregroundApp.appName, it) }
         val notificationUpdated = notificationHelper.updateRunningNotification(timerState, todayUsageSeconds, evaluation)
         var dailyTriggered = false
-        if (evaluation != null && coordinator.enhancedInterventionsAllowed(pkg)) {
+        val dailyAvailable = InterventionPresentationPolicy.canShow(
+            permissionHealthManager.state.value, coordinator.interventionsAllowed(pkg),
+        )
+        if (evaluation != null && dailyAvailable) {
             val decision = interventionManager.evaluate(
                 foregroundApp.appName, evaluation, checkNotNull(effectiveLimit).baseLimitSeconds,
                 timerState.currentSessionSeconds, isNewSession,
@@ -321,7 +334,7 @@ class UsageMonitorService : Service() {
         }
         val selected = selectInterventionType(
             dailyLimitTriggered = dailyTriggered || (evaluation?.isLimitReached == true &&
-                coordinator.enhancedInterventionsAllowed(pkg)),
+                dailyAvailable),
             sessionDue = sessionDue && permissionHealthManager.state.value.canShowSessionReminder &&
                 coordinator.interventionsAllowed(pkg),
             overlayShowing = coordinator.hasOverlay(),
@@ -350,13 +363,13 @@ class UsageMonitorService : Service() {
     private fun observePermissionHealth() {
         permissionHealthJob = serviceScope.launch {
             permissionHealthManager.state.collect { health ->
+                Log.d("AccessibilityRuntime", "enabled=${health.accessibilityGranted} " +
+                    "connected=${health.accessibilityConnected} state=${health.accessibilityRuntimeState}")
                 timingMutex.withLock {
                     if (!health.usageAccessGranted && timedForegroundApp != null) finishTrackedSession()
-                    if (!health.canShowSessionReminder ||
-                        (!health.accessibilityGranted &&
-                            (activeInterventionType == InterventionType.DAILY_LIMIT_REACHED ||
-                                activeInterventionRequest?.sessionGate?.phase == SessionGatePhase.REENTRY))
-                    ) dismissActiveIntervention()
+                    activeInterventionRequest?.let { request ->
+                        if (InterventionPresentationPolicy.shouldDismiss(request, health)) dismissActiveIntervention()
+                    }
                 }
             }
         }
@@ -394,7 +407,10 @@ class UsageMonitorService : Service() {
         }
     }
 
-    private suspend fun finishTrackedSession(keepIntervention: Boolean = activeInterventionType != null) {
+    private suspend fun finishTrackedSession(
+        keepIntervention: Boolean = activeInterventionType != null,
+        overlayPause: Boolean = false,
+    ) {
         val finalState = appTimer.finishCurrentSession()
         finalState?.let {
             friction.endPhysicalSession(it.packageName, it.currentSessionSeconds)
@@ -408,7 +424,7 @@ class UsageMonitorService : Service() {
                     coordinator.publishDaily(it.packageName, snapshot.copy(usedSeconds = usage, isOverLimit = over))
                 }
             }
-            usageTimeRepository.flush()
+            usageTimeRepository.finishPhysicalSession(overlayPause)
             Log.d(TAG, "physical session ended package=${it.packageName}; episode retained")
         }
         timedForegroundApp = null
@@ -464,37 +480,48 @@ class UsageMonitorService : Service() {
                 if (activeInterventionType == InterventionType.DAILY_LIMIT_REACHED) dismissActiveIntervention()
             }
             is LimitInterventionDecision.Show -> {
-                val request = decision.request
+                val presentation = if (alreadyHome) InterventionPresentation.HOME_FIRST else
+                    InterventionPresentationPolicy.mode(
+                        permissionHealthManager.state.value.canForceHome && coordinator.accessibilityConnected,
+                    )
+                val request = decision.request.copy(
+                    presentation = presentation,
+                    actionDeadlineMillis = android.os.SystemClock.elapsedRealtime() + 5_000L,
+                )
                 if (activeInterventionType == InterventionType.SESSION_REMINDER) dismissActiveIntervention()
                 if (!coordinator.claimOverlay(InterventionPriority.DAILY, request.packageName)) {
                     interventionManager.closeVisibleIntervention(request.packageName)
                     return
                 }
-                if (!alreadyHome && !goHomeAndFinish(request.packageName)) {
+                if (presentation == InterventionPresentation.HOME_FIRST && !alreadyHome &&
+                    !goHomeAndFinish(request.packageName)) {
                     coordinator.releaseOverlay(InterventionPriority.DAILY, request.packageName)
                     interventionManager.closeVisibleIntervention(request.packageName)
                     return
                 }
-                if (!coordinator.enhancedInterventionsAllowed(request.packageName)) {
+                if (!InterventionPresentationPolicy.canShow(
+                        permissionHealthManager.state.value, coordinator.interventionsAllowed(request.packageName),
+                    )) {
                     coordinator.releaseOverlay(InterventionPriority.DAILY, request.packageName)
                     interventionManager.closeVisibleIntervention(request.packageName)
                     return
                 }
                 val shown = interventionOverlayController.show(
                     request,
-                    onExit = { serviceScope.launch { timingMutex.withLock { dismissActiveIntervention() } } },
+                    onExit = { serviceScope.launch { timingMutex.withLock { exitActiveIntervention(request) } } },
                     onContinue = {
                         serviceScope.launch {
                             timingMutex.withLock {
                                 if (activeInterventionRequest != request) return@withLock
+                                if (android.os.SystemClock.elapsedRealtime() < checkNotNull(request.actionDeadlineMillis)) return@withLock
                                 val base = limitMinutesByPackage[request.packageName] ?: return@withLock
                                 val before = friction.snapshot(request.packageName)
                                 if (interventionManager.grantConfiguredExtension(request.packageName, base * SECONDS_PER_MINUTE)) {
                                     // No relaunch, physical-session restart or episode reset.
-                                    dismissActiveIntervention()
                                     refreshDailySnapshot(request.packageName)
+                                    dismissActiveIntervention()
                                     updateIdleNotificationIfNeeded(force = true)
-                                    Log.d(TAG, "daily extension granted; stays HOME " +
+                                    Log.d(TAG, "daily extension granted; presentation=${request.presentation} " +
                                         "package=${request.packageName} episodeBefore=$before " +
                                         "episodeAfter=${friction.snapshot(request.packageName)}")
                                 }
@@ -506,6 +533,7 @@ class UsageMonitorService : Service() {
                     activeInterventionType = InterventionType.DAILY_LIMIT_REACHED
                     activeInterventionPackageName = request.packageName
                     activeInterventionRequest = request
+                    if (presentation == InterventionPresentation.OVERLAY_IN_PLACE) pauseForOverlay(request)
                 } else {
                     interventionManager.closeVisibleIntervention(request.packageName)
                     coordinator.releaseOverlay(InterventionPriority.DAILY, request.packageName)
@@ -522,16 +550,31 @@ class UsageMonitorService : Service() {
         todayUsageSeconds: Long,
     ): Boolean {
         val pkg = app.packageName
-        if (!permissionHealthManager.state.value.canShowSessionReminder) return false
-        val mode = coordinator.sessionReminderMode(pkg) ?: return false
+        val health = permissionHealthManager.refresh()
+        if (!health.canShowSessionReminder) return false
+        val availableMode = coordinator.sessionReminderMode(pkg) ?: return false
+        var mode = if (health.canForceHome) availableMode
+            else SessionReminderMode.OVERLAY_ONLY
         if (phase == SessionGatePhase.REENTRY && !friction.isReentryGateArmed(pkg)) return false
         if (phase == SessionGatePhase.REENTRY && mode != SessionReminderMode.HOME) return false
         if (!coordinator.claimOverlay(InterventionPriority.SESSION, pkg)) return false
-        if (mode == SessionReminderMode.HOME && !goHomeAndFinish(pkg)) {
-            coordinator.releaseOverlay(InterventionPriority.SESSION, pkg)
-            friction.failOpen(pkg)
-            return false
+        if (mode == SessionReminderMode.HOME) {
+            val confirmed = coordinator.requestSessionHome(pkg)
+            Log.d(INTERVENTION_TAG, "session HOME package=$pkg confirmed=$confirmed phase=$phase")
+            if (confirmed) {
+                currentForegroundApp = null
+                finishTrackedSession(keepIntervention = true)
+            } else if (phase == SessionGatePhase.REENTRY) {
+                coordinator.releaseOverlay(InterventionPriority.SESSION, pkg)
+                friction.failOpen(pkg)
+                return false
+            } else {
+                // Never describe an unconfirmed HOME request as a completed exit.
+                mode = SessionReminderMode.OVERLAY_ONLY
+            }
         }
+        Log.d(INTERVENTION_TAG, "session presentation package=$pkg mode=$mode " +
+            "accessibility=${health.accessibilityRuntimeState}")
         if (!coordinator.interventionsAllowed(pkg)) {
             coordinator.releaseOverlay(InterventionPriority.SESSION, pkg)
             return false
@@ -547,18 +590,22 @@ class UsageMonitorService : Service() {
         val request = LimitInterventionRequest.sessionReminder(
             pkg, app.appName, todayUsageSeconds, episode.episodeUsageSeconds,
             episode.firstReminderSeconds, gate,
+            presentation = InterventionPresentationPolicy.mode(mode == SessionReminderMode.HOME),
         )
         val shown = interventionOverlayController.show(
             request,
             onExit = { serviceScope.launch { timingMutex.withLock { finishGate(request, continueApp = false) } } },
             onContinue = { serviceScope.launch { timingMutex.withLock { finishGate(request, continueApp = true) } } },
-            onCountdownFinished = { serviceScope.launch { timingMutex.withLock { finishGate(request, continueApp = false) } } },
         )
         if (shown) {
             activeInterventionType = InterventionType.SESSION_REMINDER
             activeInterventionPackageName = pkg
             activeInterventionRequest = request
-            if (gate.phase == SessionGatePhase.REMINDER) friction.onReminderShown(pkg, gate.id)
+            if (gate.phase == SessionGatePhase.REMINDER) {
+                friction.onReminderShown(pkg, gate.id, armReentry = mode == SessionReminderMode.HOME &&
+                    coordinator.accessibilityConnected && permissionHealthManager.state.value.canForceHome)
+            }
+            if (request.presentation == InterventionPresentation.OVERLAY_IN_PLACE) pauseForOverlay(request)
             if (com.example.timemanager.BuildConfig.DEBUG) {
                 val stage = friction.snapshot(pkg)
                 Log.d("SessionFrictionTransition", "package=$pkg reminderStage=${stage?.reminderCount} " +
@@ -577,12 +624,15 @@ class UsageMonitorService : Service() {
     private suspend fun finishGate(request: LimitInterventionRequest, continueApp: Boolean) {
         val gate = request.sessionGate ?: return
         if (activeInterventionRequest?.sessionGate?.id != gate.id) return
-        if (android.os.SystemClock.elapsedRealtime() < gate.endTimeMillis) return
-        if (!continueApp) {
-            dismissActiveIntervention()
+        val action = InterventionPresentationPolicy.sessionCompletion(
+            request, continueApp, android.os.SystemClock.elapsedRealtime(),
+        )
+        if (action == SessionCompletionAction.WAIT) return
+        if (action == SessionCompletionAction.EXIT_TO_HOME) {
+            exitSessionIntervention(request)
             return
         }
-        if (coordinator.isFocusBlocking(request.packageName)) {
+        if (coordinator.accessibilityConnected && coordinator.isFocusBlocking(request.packageName)) {
             dismissActiveIntervention()
             return
         }
@@ -595,8 +645,13 @@ class UsageMonitorService : Service() {
                     request.appName, evaluation, limit.baseLimitSeconds,
                     request.currentSessionSeconds, isNewSession = true,
                 ),
-                alreadyHome = true,
+                alreadyHome = request.presentation == InterventionPresentation.HOME_FIRST,
             )
+            return
+        }
+        if (action == SessionCompletionAction.CONTINUE_IN_PLACE) {
+            dismissActiveIntervention()
+            Log.d(INTERVENTION_TAG, "overlay choice continue package=${request.packageName}; no launch or admission")
             return
         }
         if (!friction.allowNextEntry(request.packageName, gate.id)) return
@@ -613,7 +668,8 @@ class UsageMonitorService : Service() {
     > {
         val day = usageDayProvider.currentUsageDay().key
         val observed = coordinator.dailySnapshot(packageName)?.takeIf { it.usageDayKey == day }?.usedSeconds ?: 0L
-        val used = maxOf(observed, usageTimeRepository.getTodayUsage(packageName))
+        val used = maxOf(observed, usageTimeRepository.currentRuntimeUsage(packageName)
+            ?: usageTimeRepository.getTodayUsage(packageName))
         val storedLimit = limitRepository.observeLimit(packageName).first()
         val limit = storedLimit?.let { interventionManager.getEffectiveLimit(packageName, it.limitMinutes) }
         val evaluation = limit?.let { limitEvaluator.evaluateSeconds(packageName, used, it.effectiveLimitSeconds) }
@@ -622,6 +678,53 @@ class UsageMonitorService : Service() {
         Log.d(USAGE_LIMIT_EVALUATOR_TAG, "entry package=$packageName today=$used " +
             "base=${limit?.baseLimitSeconds} extension=${limit?.todayExtensionSeconds} effective=${limit?.effectiveLimitSeconds}")
         return limit to evaluation
+    }
+
+    private suspend fun pauseForOverlay(request: LimitInterventionRequest) {
+        val priority = if (request.type == InterventionType.DAILY_LIMIT_REACHED)
+            InterventionPriority.DAILY else InterventionPriority.SESSION
+        coordinator.pauseTimingForOverlay(priority, request.packageName)
+        finishTrackedSession(keepIntervention = true, overlayPause = true)
+        Log.d(TAG, "overlay timing paused package=${request.packageName}; episode retained")
+    }
+
+    private suspend fun exitActiveIntervention(request: LimitInterventionRequest) {
+        if (activeInterventionRequest != request) return
+        try {
+            if (request.presentation == InterventionPresentation.OVERLAY_IN_PLACE) {
+                withContext(Dispatchers.Main.immediate) { interventionOverlayController.openHomeScreen() }
+                currentForegroundApp = null
+            }
+        } catch (error: Exception) {
+            Log.w(TAG, "user-requested HOME failed; dismissing overlay", error)
+        } finally {
+            dismissActiveIntervention()
+        }
+    }
+
+    /** User explicitly asked for HOME; presentation mode alone must never skip navigation. */
+    private suspend fun exitSessionIntervention(request: LimitInterventionRequest) {
+        if (activeInterventionRequest != request) return
+        try {
+            val health = permissionHealthManager.refresh()
+            val confirmed = health.canForceHome && coordinator.requestSessionHome(request.packageName)
+            if (!confirmed) {
+                withContext(Dispatchers.Main.immediate) { interventionOverlayController.openHomeScreen() }
+            }
+            currentForegroundApp = null
+            finishTrackedSession(keepIntervention = true)
+            Log.d(INTERVENTION_TAG, "session exit package=${request.packageName} " +
+                "homeConfirmed=$confirmed launcherIntentRequested=${!confirmed}")
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Log.w(TAG, "session HOME failed; user can use the system HOME gesture", error)
+            withContext(Dispatchers.Main.immediate) {
+                Toast.makeText(this@UsageMonitorService, "无法返回桌面，请使用系统主页手势", Toast.LENGTH_SHORT).show()
+            }
+        } finally {
+            dismissActiveIntervention()
+        }
     }
 
     private suspend fun resolveForegroundApp(packageName: String): ForegroundApp = withContext(Dispatchers.IO) {
@@ -795,6 +898,7 @@ class UsageMonitorService : Service() {
         const val SESSION_TRACKER_TAG = "SessionTracker"
         const val SECONDS_PER_MINUTE = 60L
         const val DETECTION_INTERVAL_MILLIS = 1_000L
+        const val PERMISSION_REFRESH_INTERVAL_MILLIS = 5_000L
         const val DIAGNOSTIC_LOG_INTERVAL_SECONDS = 15L
         const val EVENT_OVERLAP_MILLIS = 500L
         const val INITIAL_LOOKBACK_MILLIS = 24 * 60 * 60 * 1_000L

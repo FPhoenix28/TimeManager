@@ -85,6 +85,51 @@ class SessionFrictionManagerTest {
         assertEquals(now + 3_000L, manager.snapshot("one")!!.bypassExpiresAtMillis)
     }
 
+    @Test fun firstReminderReadyChoiceKeepsGateAndProgressionUntilExplicitContinue() {
+        manager.beginPhysicalSession("one", 600L)
+        manager.onActualUsage("one", 600L)
+        val gate = manager.beginGate("one", SessionGatePhase.REMINDER)!!
+        manager.onReminderShown("one", gate.id)
+        manager.endPhysicalSession("one", 600L)
+        now += 4_999L
+        assertFalse(manager.allowNextEntry("one", gate.id))
+        now++
+        val ready = manager.snapshot("one")!!
+        assertEquals(gate.id, ready.pendingGate!!.id)
+        assertEquals(1, ready.reminderCount)
+        assertEquals(1_080L, ready.nextReminderAtSeconds)
+        assertTrue(manager.allowNextEntry("one", gate.id))
+        val after = manager.snapshot("one")!!
+        assertNull(after.pendingGate)
+        assertEquals(ready.reminderCount, after.reminderCount)
+        assertEquals(ready.nextReminderAtSeconds, after.nextReminderAtSeconds)
+        assertEquals(ready.episodeUsageSeconds, after.episodeUsageSeconds)
+        assertTrue(manager.consumeBypass("one"))
+        assertFalse(manager.consumeBypass("one"))
+        assertTrue(manager.isEntryAdmitted("one"))
+        manager.onForegroundLeft("one")
+        assertTrue(manager.isReentryGateArmed("one"))
+        val reentry = manager.beginGate("one", SessionGatePhase.REENTRY)!!
+        now += 5_000L
+        assertTrue(manager.allowNextEntry("one", reentry.id))
+        assertTrue(manager.consumeBypass("one"))
+        manager.onForegroundLeft("one")
+        assertFalse(manager.isReentryGateArmed("one"))
+    }
+
+    @Test fun firstReminderStayHomeDoesNotConsumeTheLaterReentryGate() {
+        manager.beginPhysicalSession("one", 600L)
+        manager.onActualUsage("one", 600L)
+        val gate = manager.beginGate("one", SessionGatePhase.REMINDER)!!
+        manager.onReminderShown("one", gate.id)
+        manager.endPhysicalSession("one", 600L)
+        now += 5_000L
+        manager.closeGate("one", gate.id)
+        assertTrue(manager.isReentryGateArmed("one"))
+        assertNull(manager.snapshot("one")!!.bypassExpiresAtMillis)
+        assertEquals(1_080L, manager.snapshot("one")!!.nextReminderAtSeconds)
+    }
+
     @Test fun tokenIsPackageSpecificSingleUseAndVisitAdmissionEndsOnExit() {
         activate()
         val gate = manager.beginGate("one", SessionGatePhase.REENTRY)!!
@@ -227,5 +272,73 @@ class SessionFrictionManagerTest {
         manager.onReminderShown("one", gate.id)
         manager.endPhysicalSession("one", 600L)
         manager.closeGate("one", gate.id)
+    }
+
+    @Test fun overlayChoiceContinueAndExitRetainStageWithoutGateOrAdmission() {
+        // Both actions close the same committed fallback gate; neither grants admission.
+        repeat(2) {
+            val tracker = SessionFrictionManager(clock = { now })
+            tracker.beginPhysicalSession("one", 600L)
+            tracker.onActualUsage("one", 600L)
+            val gate = tracker.beginGate("one", SessionGatePhase.REMINDER)!!
+            tracker.onReminderShown("one", gate.id, armReentry = false)
+            tracker.endPhysicalSession("one", 600L)
+            now += 5_000L
+            tracker.closeGate("one", gate.id)
+            val state = tracker.snapshot("one")!!
+            assertEquals(1, state.reminderCount)
+            assertEquals(1_080L, state.nextReminderAtSeconds)
+            assertEquals(600L, state.episodeUsageSeconds)
+            assertTrue(state.reentryGateConsumed)
+            assertNull(state.bypassExpiresAtMillis)
+            assertFalse(state.allowedForeground)
+            assertNull(tracker.beginGate("one", SessionGatePhase.REENTRY))
+            tracker.beginPhysicalSession("one", 600L)
+            tracker.onActualUsage("one", 1L)
+            assertEquals(601L, tracker.snapshot("one")!!.episodeUsageSeconds)
+        }
+    }
+
+    @Test fun restoreDoesNotRetroactivelyArmFallbackStageButFutureStageCanArmOnce() {
+        manager.beginPhysicalSession("one", 600L)
+        manager.onActualUsage("one", 600L)
+        val first = manager.beginGate("one", SessionGatePhase.REMINDER)!!
+        manager.onReminderShown("one", first.id, armReentry = false)
+        manager.endPhysicalSession("one", 600L)
+        manager.closeGate("one", first.id)
+        manager.onAccessibilityDisconnected()
+        assertFalse(manager.isReentryGateArmed("one"))
+        manager.beginPhysicalSession("one", 600L)
+        manager.onActualUsage("one", 480L)
+        val next = manager.beginGate("one", SessionGatePhase.REMINDER)!!
+        manager.onReminderShown("one", next.id, armReentry = true)
+        manager.endPhysicalSession("one", 480L)
+        manager.closeGate("one", next.id)
+        assertTrue(manager.isReentryGateArmed("one"))
+        val reentry = manager.beginGate("one", SessionGatePhase.REENTRY)!!
+        manager.closeGate("one", reentry.id)
+        assertNull(manager.beginGate("one", SessionGatePhase.REENTRY))
+    }
+
+    @Test fun overlayPauseExcludesElapsedWaitFromEpisodeAndKeepsPendingChoice() {
+        manager.beginPhysicalSession("one", 600L)
+        manager.onActualUsage("one", 600L)
+        val gate = manager.beginGate("one", SessionGatePhase.REMINDER)!!
+        manager.onReminderShown("one", gate.id, armReentry = false)
+        manager.endPhysicalSession("one", 600L)
+        now += 400_000L
+        assertTrue(manager.expireIdleEpisodes().isEmpty())
+        assertEquals(600L, manager.snapshot("one")!!.episodeUsageSeconds)
+        manager.closeGate("one", gate.id)
+        // A genuine long rest still resets before usage resumes.
+        assertEquals(setOf("one"), manager.expireIdleEpisodes())
+    }
+
+    @Test fun dailyTakingPriorityDoesNotCommitDueReminderStage() {
+        manager.beginPhysicalSession("one", 600L)
+        manager.onActualUsage("one", 600L)
+        assertTrue(manager.isReminderDue("one"))
+        assertEquals(0, manager.snapshot("one")!!.reminderCount)
+        assertEquals(600L, manager.snapshot("one")!!.nextReminderAtSeconds)
     }
 }

@@ -5,7 +5,10 @@ import com.example.timemanager.domain.focus.FocusEnforcementPolicy
 import com.example.timemanager.monitor.SessionFrictionManager
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 
 enum class InterventionPriority { SESSION, DAILY, FOCUS, DEEP }
@@ -28,7 +31,11 @@ sealed interface MonitorInterventionCommand {
     data class DismissForFocus(val result: CompletableDeferred<Boolean>) : MonitorInterventionCommand
 }
 
-data class HomeCommand(val packageName: String, val result: CompletableDeferred<Boolean>)
+data class HomeCommand(
+    val packageName: String,
+    val result: CompletableDeferred<Boolean>,
+    val confirmLauncher: Boolean = false,
+)
 
 /** Process state + lifecycle-collected messages only: never retains a Service, Context or View. */
 class InterventionCoordinator(
@@ -44,27 +51,33 @@ class InterventionCoordinator(
     private var managedPackages = emptySet<String>()
     private var focusState = FocusModeState()
     private var foregroundPackage: String? = null
-    private var lastStablePackage: String? = null
+    private val lastStablePackage = MutableStateFlow<String?>(null)
+    private var sessionHomeLauncher: String? = null
     private var hasForegroundObservation = false
     private var homeTransitionTarget: String? = null
     private var pendingEntry: ForegroundEntry? = null
     private var generation = 0L
     private var failedOpenVisit: String? = null
     private var overlayOwner: Pair<InterventionPriority, String>? = null
-    @Volatile var accessibilityConnected = false
-        private set
+    private val mutableAccessibilityConnection = MutableStateFlow(false)
+    val accessibilityConnection = mutableAccessibilityConnection.asStateFlow()
+    val accessibilityConnected: Boolean get() = mutableAccessibilityConnection.value
+    private var overlayPausesTiming = false
 
-    @Synchronized fun setAccessibilityConnected(connected: Boolean) {
-        accessibilityConnected = connected
+    @Synchronized fun setAccessibilityConnected(connected: Boolean, launcherPackage: String? = null) {
+        if (connected && launcherPackage != null) sessionHomeLauncher = launcherPackage
+        if (accessibilityConnected == connected) return
+        mutableAccessibilityConnection.value = connected
         hasForegroundObservation = false
         homeTransitionTarget = null
         if (!connected) {
             foregroundPackage?.let(friction::onForegroundLeft)
             foregroundPackage = null
-            lastStablePackage = null
+            lastStablePackage.value = null
+            sessionHomeLauncher = null
             pendingEntry = null
             failedOpenVisit = null
-            friction.clear()
+            friction.onAccessibilityDisconnected()
         }
     }
 
@@ -96,7 +109,7 @@ class InterventionCoordinator(
             monitorEvents.tryEmit(MonitorInterventionCommand.ForegroundLeft(previous))
         }
         foregroundPackage = packageName
-        lastStablePackage = packageName
+        lastStablePackage.value = packageName
         failedOpenVisit = null
         generation++
         pendingEntry = null
@@ -109,7 +122,7 @@ class InterventionCoordinator(
     @Synchronized fun onForegroundWindow(packageName: String, stableAppWindow: Boolean): ForegroundEntry? =
         if (stableAppWindow) onForegroundChanged(packageName) else null
 
-    @Synchronized fun stableForegroundPackage(): String? = lastStablePackage
+    @Synchronized fun stableForegroundPackage(): String? = lastStablePackage.value
 
     @Synchronized fun awaitingStableExit(packageName: String): Boolean = homeTransitionTarget == packageName
 
@@ -128,8 +141,14 @@ class InterventionCoordinator(
         foregroundPackage == packageName
 
     @Synchronized fun canTime(packageName: String): Boolean =
-        !accessibilityConnected || !hasForegroundObservation ||
-            foregroundPackage == packageName && pendingEntry == null
+        !overlayPausesTiming && (!accessibilityConnected || !hasForegroundObservation ||
+            foregroundPackage == packageName && pendingEntry == null)
+
+    @Synchronized fun pauseTimingForOverlay(priority: InterventionPriority, packageName: String) {
+        if (overlayOwner == (priority to packageName)) overlayPausesTiming = true
+    }
+
+    @Synchronized fun isTimingPausedForOverlay(): Boolean = overlayPausesTiming
 
     /** Wait for a real launcher/other-app boundary, not delayed window echoes after HOME. */
     @Synchronized fun shouldIgnoreHomeEcho(packageName: String): Boolean {
@@ -190,7 +209,10 @@ class InterventionCoordinator(
     }
 
     @Synchronized fun releaseOverlay(priority: InterventionPriority, packageName: String) {
-        if (overlayOwner == (priority to packageName)) overlayOwner = null
+        if (overlayOwner == (priority to packageName)) {
+            overlayOwner = null
+            overlayPausesTiming = false
+        }
     }
 
     @Synchronized fun hasOverlay(): Boolean = overlayOwner != null
@@ -226,6 +248,29 @@ class InterventionCoordinator(
             ?: false.also { response.cancel() }
     }
 
+    /** Session-only: API acknowledgement is not proof that the launcher is visible. */
+    suspend fun requestSessionHome(packageName: String): Boolean {
+        val launcher = synchronized(this) { sessionHomeLauncher } ?: return false
+        if (!accessibilityConnected || accessibilityEvents.subscriptionCount.value == 0) return false
+        if (lastStablePackage.value == launcher) return true
+        val response = CompletableDeferred<Boolean>()
+        var confirmed = false
+        try {
+            confirmed = withTimeoutOrNull(COMMAND_TIMEOUT_MILLIS) {
+                accessibilityEvents.emit(HomeCommand(packageName, response, confirmLauncher = true))
+                response.await() && lastStablePackage.first {
+                    it == launcher || !accessibilityConnected
+                } == launcher
+            } ?: false
+            return confirmed
+        } finally {
+            if (!confirmed) {
+                response.cancel()
+                cancelHomeRequest(packageName)
+            }
+        }
+    }
+
     suspend fun dismissLowerForFocus(): Boolean {
         if (monitorEvents.subscriptionCount.value == 0) return !hasLowerOverlay()
         val response = CompletableDeferred<Boolean>()
@@ -239,6 +284,7 @@ class InterventionCoordinator(
         managedPackages = emptySet()
         pendingEntry = null
         if (overlayOwner?.first?.let { it <= InterventionPriority.DAILY } == true) overlayOwner = null
+        overlayPausesTiming = false
         friction.clear()
     }
 

@@ -103,14 +103,14 @@ class SessionFrictionManager(
         return gate
     }
 
-    @Synchronized fun onReminderShown(packageName: String, gateId: Long) {
+    @Synchronized fun onReminderShown(packageName: String, gateId: Long, armReentry: Boolean = true) {
         val state = episodes[packageName] ?: return
         val gate = state.pendingGate ?: return
         if (gate.id != gateId || gate.phase != SessionGatePhase.REMINDER || gate.reminderCommitted) return
         val count = state.reminderCount + 1
         episodes[packageName] = state.copy(
             reminderCount = count,
-            reentryGateArmed = true,
+            reentryGateArmed = armReentry,
             nextReminderAtSeconds = state.nextReminderAtSeconds +
                 if (count <= 2) 8L * 60L else 5L * 60L,
             pendingGate = gate.copy(reminderCommitted = true),
@@ -123,10 +123,11 @@ class SessionFrictionManager(
         episodes[packageName] = state.copy(pendingGate = null, bypassExpiresAtMillis = null)
     }
 
+    /** Explicit Continue from either shown gate; progression/re-entry arming stay unchanged. */
     @Synchronized fun allowNextEntry(packageName: String, gateId: Long): Boolean {
         val state = episodes[packageName] ?: return false
         val gate = state.pendingGate ?: return false
-        if (gate.id != gateId || gate.phase != SessionGatePhase.REENTRY || clock() < gate.endTimeMillis) return false
+        if (gate.id != gateId || clock() < gate.endTimeMillis) return false
         episodes[packageName] = state.copy(
             pendingGate = null,
             bypassExpiresAtMillis = clock() + bypassDurationMillis,
@@ -155,6 +156,18 @@ class SessionFrictionManager(
         episodes[packageName]?.let { episodes[packageName] = it.copy(bypassExpiresAtMillis = null) }
     }
 
+    /** Lose enhanced admission, not the episode or an already shown ordinary reminder. */
+    @Synchronized fun onAccessibilityDisconnected() {
+        episodes.replaceAll { _, state ->
+            state.copy(
+                reentryGateArmed = false,
+                bypassExpiresAtMillis = null,
+                allowedForeground = false,
+                pendingGate = state.pendingGate?.takeUnless { it.phase == SessionGatePhase.REENTRY },
+            )
+        }
+    }
+
     @Synchronized fun isEntryAdmitted(packageName: String): Boolean =
         episodes[packageName]?.allowedForeground == true
 
@@ -164,7 +177,7 @@ class SessionFrictionManager(
     @Synchronized fun expireIdleEpisodes(): Set<String> {
         val now = clock()
         val expired = episodes.values.filter { state ->
-            state.packageName != actualForegroundPackage &&
+            state.pendingGate == null && state.packageName != actualForegroundPackage &&
                 now - state.lastEngagementTimeMillis >= idleResetMillis
         }.map { it.packageName }.toSet()
         expired.forEach(episodes::remove)

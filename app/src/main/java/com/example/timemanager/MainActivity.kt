@@ -105,7 +105,7 @@ class MainActivity : ComponentActivity() {
     private val hasUsageAccess get() = permissionHealthManager.state.value.usageAccessGranted
     private val hasNotificationPermission get() = permissionHealthManager.state.value.notificationGranted
     private val hasOverlayPermission get() = permissionHealthManager.state.value.overlayGranted
-    private val hasAccessibilityPermission get() = permissionHealthManager.state.value.accessibilityGranted
+    private val hasAccessibilityPermission get() = permissionHealthManager.state.value.canForceHome
     private var onboardingCompleted by mutableStateOf<Boolean?>(null)
     private var destination by mutableStateOf(AppDestination.HOME)
     private lateinit var onboardingPreferences: OnboardingPreferences
@@ -435,7 +435,7 @@ class MainActivity : ComponentActivity() {
                             )
                             AppDestination.FOCUS_SETUP -> FocusSetupScreen(
                                 viewModel = focusViewModel,
-                                accessibilityEnabled = permissionState.accessibilityGranted,
+                                accessibilityEnabled = permissionState.canForceHome,
                                 onCheckAccessibility = { refreshPermissionStatus(); hasAccessibilityPermission },
                                 onBack = { destination = AppDestination.HOME },
                                 onStarted = { destination = AppDestination.FOCUS_ACTIVE },
@@ -444,7 +444,7 @@ class MainActivity : ComponentActivity() {
                             )
                             AppDestination.FOCUS_ACTIVE -> FocusActiveScreen(
                                 viewModel = focusViewModel,
-                                accessibilityEnabled = permissionState.accessibilityGranted,
+                                accessibilityEnabled = permissionState.canForceHome,
                                 onBack = { destination = AppDestination.HOME },
                                 onStopped = { destination = AppDestination.HOME },
                                 onRequestAccessibility = ::openAccessibilitySettings,
@@ -452,7 +452,7 @@ class MainActivity : ComponentActivity() {
                             )
                             AppDestination.DEEP_FOCUS_SETUP -> DeepFocusSetupScreen(
                                 viewModel = deepFocusViewModel,
-                                accessibilityEnabled = permissionState.accessibilityGranted,
+                                accessibilityEnabled = permissionState.canForceHome,
                                 overlayEnabled = permissionState.overlayGranted,
                                 onCheckAccessibility = { refreshPermissionStatus(); hasAccessibilityPermission },
                                 onBack = { destination = AppDestination.HOME },
@@ -463,7 +463,7 @@ class MainActivity : ComponentActivity() {
                             )
                             AppDestination.DEEP_FOCUS_ACTIVE -> DeepFocusActiveScreen(
                                 viewModel = deepFocusViewModel,
-                                accessibilityEnabled = permissionState.accessibilityGranted,
+                                accessibilityEnabled = permissionState.canForceHome,
                                 overlayEnabled = permissionState.overlayGranted,
                                 onEnded = { destination = AppDestination.HOME },
                                 onRequestAccessibility = ::openAccessibilitySettings,

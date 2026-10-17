@@ -20,6 +20,7 @@ class UsageTimeRepository(
     private val estimatesByPackage = mutableMapOf<String, Long>()
     private val persistedSecondsByPackage = mutableMapOf<String, Long>()
     private val historyPersistedSecondsByPackage = mutableMapOf<String, Long>()
+    private var resumeWithoutSystemReseed: String? = null
 
     suspend fun recordTimerState(timerState: TimerState): Long {
         val usageDay = usageDayProvider.currentUsageDay()
@@ -30,10 +31,15 @@ class UsageTimeRepository(
             activePackageName = timerState.packageName
             lastSessionSeconds = timerState.currentSessionSeconds
 
-            estimatesByPackage[timerState.packageName] = max(
-                estimatesByPackage[timerState.packageName] ?: 0L,
-                historicalUsageSeconds(timerState.packageName, usageDay.startTimeMillis),
-            )
+            if (resumeWithoutSystemReseed == timerState.packageName) {
+                // The overlay covered this app: resume the flushed estimate, not OS foreground time.
+                resumeWithoutSystemReseed = null
+            } else {
+                estimatesByPackage[timerState.packageName] = max(
+                    estimatesByPackage[timerState.packageName] ?: 0L,
+                    historicalUsageSeconds(timerState.packageName, usageDay.startTimeMillis),
+                )
+            }
         } else {
             val elapsedDelta = (timerState.currentSessionSeconds - lastSessionSeconds)
                 .coerceAtLeast(0L)
@@ -110,6 +116,17 @@ class UsageTimeRepository(
         flushActiveRecord(date, forceHistory = true)
     }
 
+    /** A restarted same-package physical session needs a fresh delta baseline. */
+    suspend fun finishPhysicalSession(overlayPause: Boolean = false) {
+        flush()
+        if (overlayPause) resumeWithoutSystemReseed = activePackageName
+        activePackageName = null
+        lastSessionSeconds = 0L
+    }
+
+    fun currentRuntimeUsage(packageName: String): Long? =
+        if (runtimeDate == usageDayProvider.currentUsageDay().key) estimatesByPackage[packageName] else null
+
     private suspend fun ensureRuntimeDate(today: String) {
         if (runtimeDate == today) return
 
@@ -120,6 +137,7 @@ class UsageTimeRepository(
         val storedRecords = preferences.getRecordsForDate(today)
         runtimeDate = today
         activePackageName = null
+        resumeWithoutSystemReseed = null
         lastSessionSeconds = 0L
         estimatesByPackage.clear()
         estimatesByPackage.putAll(storedRecords)

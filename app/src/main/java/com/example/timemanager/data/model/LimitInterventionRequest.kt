@@ -1,5 +1,7 @@
 package com.example.timemanager.data.model
 
+import com.example.timemanager.domain.intervention.InterventionPresentation
+
 data class LimitInterventionRequest(
     val type: InterventionType = InterventionType.DAILY_LIMIT_REACHED,
     val packageName: String,
@@ -13,6 +15,8 @@ data class LimitInterventionRequest(
     val extensionDurationSeconds: Long,
     val configuredSessionReminderSeconds: Long = 10L * 60L,
     val sessionGate: SessionGate? = null,
+    val presentation: InterventionPresentation = InterventionPresentation.HOME_FIRST,
+    val actionDeadlineMillis: Long? = null,
 ) {
     companion object {
         fun sessionReminder(
@@ -22,6 +26,7 @@ data class LimitInterventionRequest(
             currentSessionSeconds: Long,
             configuredReminderSeconds: Long,
             gate: SessionGate,
+            presentation: InterventionPresentation = InterventionPresentation.HOME_FIRST,
         ) = LimitInterventionRequest(
             type = InterventionType.SESSION_REMINDER,
             packageName = packageName,
@@ -35,6 +40,7 @@ data class LimitInterventionRequest(
             extensionDurationSeconds = 0L,
             configuredSessionReminderSeconds = configuredReminderSeconds,
             sessionGate = gate,
+            presentation = presentation,
         )
     }
 }

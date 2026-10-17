@@ -8,10 +8,13 @@ import com.example.timemanager.data.model.InterventionType
 import com.example.timemanager.service.selectInterventionType
 import com.example.timemanager.monitor.SessionFrictionManager
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -194,6 +197,111 @@ class InterventionCoordinatorTest {
         homeJob.cancelAndJoin()
     }
 
+    @Test fun sessionHomeAcknowledgementWaitsForRealLauncherNotOverlayOrOtherApp() = runBlocking {
+        coordinator.updateManagedPackages(setOf("one"))
+        coordinator.setAccessibilityConnected(true, launcherPackage = "launcher")
+        coordinator.onForegroundWindow("one", stableAppWindow = true)
+        val acknowledged = CompletableDeferred<Unit>()
+        val homeJob = launch(start = CoroutineStart.UNDISPATCHED) {
+            coordinator.accessibilityCommands.collect { command ->
+                assertTrue(command.confirmLauncher)
+                coordinator.markHomeRequested(command.packageName)
+                command.result.complete(true)
+                acknowledged.complete(Unit)
+            }
+        }
+        try {
+            val navigation = async(start = CoroutineStart.UNDISPATCHED) { coordinator.requestSessionHome("one") }
+            acknowledged.await()
+            yield()
+            assertFalse("HOME dispatch alone must not complete navigation", navigation.isCompleted)
+            assertTrue(coordinator.isObservedForeground("one"))
+            coordinator.onForegroundWindow("own-overlay", stableAppWindow = false)
+            coordinator.onForegroundWindow("launcher", stableAppWindow = false)
+            coordinator.onForegroundWindow("other-app", stableAppWindow = true)
+            yield()
+            assertFalse("Only the resolved launcher confirms HOME", navigation.isCompleted)
+            coordinator.onForegroundWindow("launcher", stableAppWindow = true)
+            assertTrue(navigation.await())
+            assertEquals("launcher", coordinator.stableForegroundPackage())
+            assertFalse(coordinator.awaitingStableExit("one"))
+        } finally {
+            homeJob.cancelAndJoin()
+        }
+    }
+
+    @Test fun sessionExitAlreadyOnObservedLauncherNeedsNoDuplicateHomeCommand() = runBlocking {
+        coordinator.setAccessibilityConnected(true, launcherPackage = "launcher")
+        coordinator.onForegroundWindow("launcher", stableAppWindow = true)
+        var commands = 0
+        val homeJob = launch(start = CoroutineStart.UNDISPATCHED) {
+            coordinator.accessibilityCommands.collect { commands++ }
+        }
+        try {
+            assertTrue(coordinator.requestSessionHome("one"))
+            assertEquals(0, commands)
+        } finally {
+            homeJob.cancelAndJoin()
+        }
+    }
+
+    @Test fun rejectedSessionHomeDoesNotSynthesizeExitOrLeaveEchoSuppression() = runBlocking {
+        coordinator.setAccessibilityConnected(true, launcherPackage = "launcher")
+        coordinator.onForegroundWindow("one", stableAppWindow = true)
+        val homeJob = launch(start = CoroutineStart.UNDISPATCHED) {
+            coordinator.accessibilityCommands.collect { command ->
+                coordinator.markHomeRequested(command.packageName)
+                command.result.complete(false)
+            }
+        }
+        try {
+            assertFalse(coordinator.requestSessionHome("one"))
+            assertEquals("one", coordinator.stableForegroundPackage())
+            assertFalse(coordinator.awaitingStableExit("one"))
+        } finally {
+            homeJob.cancelAndJoin()
+        }
+    }
+
+    @Test fun disconnectCannotConfirmSessionHome() = runBlocking {
+        coordinator.setAccessibilityConnected(true, launcherPackage = "launcher")
+        coordinator.onForegroundWindow("one", stableAppWindow = true)
+        val acknowledged = CompletableDeferred<Unit>()
+        val homeJob = launch(start = CoroutineStart.UNDISPATCHED) {
+            coordinator.accessibilityCommands.collect { command ->
+                command.result.complete(true)
+                acknowledged.complete(Unit)
+            }
+        }
+        try {
+            val navigation = async(start = CoroutineStart.UNDISPATCHED) { coordinator.requestSessionHome("one") }
+            acknowledged.await()
+            coordinator.setAccessibilityConnected(false)
+            assertFalse(navigation.await())
+            assertFalse(coordinator.requestSessionHome("one"))
+        } finally {
+            homeJob.cancelAndJoin()
+        }
+    }
+
+    @Test fun missingLauncherEventTimesOutWithoutPretendingTheTargetExited() = runBlocking {
+        coordinator.setAccessibilityConnected(true, launcherPackage = "launcher")
+        coordinator.onForegroundWindow("one", stableAppWindow = true)
+        val homeJob = launch(start = CoroutineStart.UNDISPATCHED) {
+            coordinator.accessibilityCommands.collect { command ->
+                coordinator.markHomeRequested(command.packageName)
+                command.result.complete(true)
+            }
+        }
+        try {
+            assertFalse(coordinator.requestSessionHome("one"))
+            assertTrue(coordinator.isObservedForeground("one"))
+            assertFalse(coordinator.awaitingStableExit("one"))
+        } finally {
+            homeJob.cancelAndJoin()
+        }
+    }
+
     @Test fun sessionReminderIsNotSilentlyDroppedWithoutAccessibility() {
         coordinator.updateManagedPackages(setOf("one"))
         friction.beginPhysicalSession("one", 600L)
@@ -228,11 +336,11 @@ class InterventionCoordinatorTest {
         assertFalse(coordinator.claimOverlay(InterventionPriority.SESSION, "one"))
     }
 
-    @Test fun dailyUnavailableWithoutAccessibilityDoesNotHideDueSessionReminder() {
+    @Test fun dailyAvailableWithoutAccessibilityTakesPriorityOverDueSessionReminder() {
         coordinator.publishDaily("one", DailyLimitSnapshot("day", 600L, 600L, true))
-        assertEquals(InterventionType.SESSION_REMINDER, selectInterventionType(
+        assertEquals(InterventionType.DAILY_LIMIT_REACHED, selectInterventionType(
             dailyLimitTriggered = coordinator.dailySnapshot("one")!!.isOverLimit &&
-                coordinator.enhancedInterventionsAllowed("one"),
+                coordinator.interventionsAllowed("one"),
             sessionDue = coordinator.interventionsAllowed("one"),
             overlayShowing = false,
         ))
@@ -245,5 +353,18 @@ class InterventionCoordinatorTest {
         friction.onReminderShown("one", gate.id)
         friction.endPhysicalSession("one", 600L)
         friction.closeGate("one", gate.id)
+    }
+
+    @Test fun accessibilityDisconnectPreservesEpisodeAndDoesNotRestartFirstThreshold() {
+        coordinator.setAccessibilityConnected(true)
+        activateFriction()
+        val before = friction.snapshot("one")!!
+        coordinator.setAccessibilityConnected(false)
+        val after = friction.snapshot("one")
+        assertNotNull("Disconnect must not erase reminder progression", after)
+        assertEquals(before.episodeUsageSeconds, after!!.episodeUsageSeconds)
+        assertEquals(before.reminderCount, after.reminderCount)
+        assertEquals(before.nextReminderAtSeconds, after.nextReminderAtSeconds)
+        assertFalse(after.reentryGateArmed)
     }
 }

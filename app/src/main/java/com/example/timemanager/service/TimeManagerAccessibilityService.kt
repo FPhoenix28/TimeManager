@@ -90,7 +90,7 @@ class TimeManagerAccessibilityService : AccessibilityService() {
         deepFocusNotification = DeepFocusNotificationHelper(this)
         registerScreenStateReceiver()
         observeHomeCommands()
-        coordinator.setAccessibilityConnected(true)
+        coordinator.setAccessibilityConnected(true, launcherPackage = deepFocusEssentials.launcherPackage)
         PermissionHealthManager.get(applicationContext).refresh()
         Log.d(
             TAG,
@@ -261,7 +261,7 @@ class TimeManagerAccessibilityService : AccessibilityService() {
         expiryJob?.cancel()
         if (::overlay.isInitialized) dismissFocusOverlay()
         if (::deepFocusOverlay.isInitialized) hideDeepFocusOverlay()
-        serviceScope.launch { coordinator.dismissLowerForFocus() }
+        // Ordinary Session/Daily overlays belong to monitoring and survive this disconnect.
         return super.onUnbind(intent)
     }
 
@@ -271,14 +271,19 @@ class TimeManagerAccessibilityService : AccessibilityService() {
             coordinator.accessibilityCommands.collect { command ->
                 if (!command.result.isActive) return@collect
                 coordinator.markHomeRequested(command.packageName)
-                val success = coordinator.isObservedForeground(command.packageName) &&
+                val targetObserved = if (command.confirmLauncher) {
+                    coordinator.stableForegroundPackage() == command.packageName
+                } else coordinator.isObservedForeground(command.packageName)
+                val success = targetObserved &&
                     performGlobalAction(GLOBAL_ACTION_HOME)
-                if (success) {
+                if (success && !command.confirmLauncher) {
                     coordinator.onHomeSucceeded(command.packageName)
-                } else {
+                } else if (!success) {
                     coordinator.cancelHomeRequest(command.packageName)
                 }
-                Log.d("SessionFriction", "HOME package=${command.packageName} success=$success")
+                // Session requests are confirmed by a real launcher event, not this acknowledgement.
+                Log.d("SessionFriction", "HOME package=${command.packageName} requested=$success " +
+                    "awaitLauncher=${command.confirmLauncher}")
                 command.result.complete(success)
             }
         }

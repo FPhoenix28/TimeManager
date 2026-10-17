@@ -4,7 +4,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PermissionHealthStateTest {
-    private val healthy = PermissionHealthState(true, true, true, true)
+    private val healthy = PermissionHealthState(true, true, true, true, true)
 
     @Test fun allFourPermissionsDefineHealthWithoutChangingOnboardingMinimum() {
         assertTrue(healthy.isHealthy)
@@ -21,6 +21,13 @@ class PermissionHealthStateTest {
 
     @Test fun missingPermissionsAreListedIndividually() {
         assertEquals(AppPermission.entries.toSet(), PermissionHealthState(false, false, false).missingPermissions)
+    }
+
+    @Test fun enabledSettingAloneNeverImpliesRuntimeConnection() {
+        val enabled = PermissionHealthState(true, true, true, accessibilityGranted = true)
+        assertEquals(AccessibilityRuntimeState.ENABLED_BUT_DISCONNECTED, enabled.accessibilityRuntimeState)
+        assertFalse(enabled.canForceHome)
+        assertTrue(enabled.allRequiredGranted)
     }
 
     @Test fun identicalRefreshesAndFewerMissingPermissionsNeverRepeatNotice() {
