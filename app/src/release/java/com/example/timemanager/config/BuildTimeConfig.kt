@@ -1,6 +1,7 @@
 package com.example.timemanager.config
 
 import com.example.timemanager.BuildConfig
+import android.content.Context
 
 /** Production parameters compiled only into release builds. */
 object BuildTimeConfig {
@@ -8,10 +9,9 @@ object BuildTimeConfig {
         check(!BuildConfig.DEBUG) { "Release time configuration cannot run in a debug build." }
     }
 
-    val value = TimeConfig(
-        debugTimeOverridesEnabled = false,
-        firstSessionReminderSeconds = 15L * 60L,
-        secondSessionReminderSeconds = 30L * 60L,
-        extensionDurationSeconds = TimeConfig.LIMIT_EXTENSION_SECONDS,
-    )
+    val value = TimeConfig.production()
+    const val supportsPreciseAppDurations = false
+    val provider = TimeConfigProvider { value }
+    fun initialize(@Suppress("UNUSED_PARAMETER") context: Context) = Unit
+    fun logIfChanged() = Unit
 }

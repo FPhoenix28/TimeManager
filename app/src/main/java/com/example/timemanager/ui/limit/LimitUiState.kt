@@ -21,6 +21,7 @@ data class ManagedAppItemUiState(
     val todayUsageSeconds: Long,
     val limitMinutes: Int?,
     val isRemoving: Boolean = false,
+    val limitSeconds: Long? = limitMinutes?.times(60L),
 )
 
 @Immutable

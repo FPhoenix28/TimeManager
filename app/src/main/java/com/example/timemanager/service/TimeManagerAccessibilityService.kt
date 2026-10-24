@@ -27,6 +27,8 @@ import com.example.timemanager.ui.focus.FocusBlockedOverlayController
 import com.example.timemanager.config.InterventionRuntime
 import com.example.timemanager.BuildConfig
 import com.example.timemanager.MainActivity
+import com.example.timemanager.accessibility.rules.*
+import com.example.timemanager.domain.rules.*
 import com.example.timemanager.permissions.PermissionHealthManager
 import com.example.timemanager.domain.intervention.EntryCheckResult
 import com.example.timemanager.domain.intervention.InterventionPriority
@@ -61,6 +63,9 @@ class TimeManagerAccessibilityService : AccessibilityService() {
     private var deepFocusOverlaySuspended = false
     private var screenReceiverRegistered = false
     private val appNameCache = mutableMapOf<String, String>()
+    private var rulesShadow: AccessibilityRulesObserver? = null
+    private lateinit var rulesFacts: AccessibilityRulesFacts
+    private val rulesAuthority = AccessibilityRulesAuthority()
     private val screenStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
@@ -88,6 +93,12 @@ class TimeManagerAccessibilityService : AccessibilityService() {
         deepFocusOverlay = DeepFocusOverlayController(this)
         deepFocusEssentials = DeepFocusEssentialAppResolver(this).resolve()
         keyguardManager = getSystemService(KeyguardManager::class.java)
+        if (::rulesFacts.isInitialized) rulesFacts.close()
+        rulesFacts = AccessibilityRulesFacts(applicationContext, coordinator, serviceScope)
+        if (BuildConfig.DEBUG) {
+            rulesShadow?.close()
+            rulesShadow = AccessibilityRulesObserver(applicationContext)
+        }
         deepFocusNotification = DeepFocusNotificationHelper(this)
         registerScreenStateReceiver()
         observeHomeCommands()
@@ -106,6 +117,7 @@ class TimeManagerAccessibilityService : AccessibilityService() {
             repository.observeState().collect { state ->
                 focusState = state
                 coordinator.updateFocus(state)
+                rulesFacts.onFocusChanged(state)
                 expiryJob?.cancel()
                 when {
                     state.isActive() -> {
@@ -164,8 +176,48 @@ class TimeManagerAccessibilityService : AccessibilityService() {
         })
         val now = System.currentTimeMillis()
         val state = focusState
+        val target = AccessibilityTargetClassifier.classify(foregroundPackage, foregroundClass, deepFocusEssentials,
+            keyguardManager.isKeyguardLocked)
+        val input = rulesFacts.snapshot(target, state, AccessibilityObservationScope.FOCUS_DEEP_WINDOW)
+            .let { it.copy(health = it.health.copy(overlayGranted = Settings.canDrawOverlays(this))) }
+        val decision = rulesAuthority.decide(input)
+        if (BuildConfig.DEBUG) rulesShadow?.observeAuthority(input, decision,
+            AccessibilityLegacyIntent.window(input, deepFocusEssentials))
+        serviceScope.launch {
+            AccessibilityAuthorityDispatch.execute(decision, { rulesFacts.isCurrent(input) }, engine = { plan ->
+                val selectedHigher = plan.evaluation.selected?.kind in setOf(RuleKind.FOCUS, RuleKind.DEEP_FOCUS)
+                coordinator.publishAccessibilityFocusSelection(foregroundPackage, state, selectedHigher)
+                when (plan.projection.intent) {
+                    AccessibilityIntent.BLOCK_FOCUS -> executeFocusBlock(foregroundPackage, state)
+                    AccessibilityIntent.BLOCK_DEEP -> handleDeepFocusTarget(foregroundPackage, foregroundClass, state, now, DeepFocusDisposition.BLOCK)
+                    AccessibilityIntent.FAIL_OPEN -> {
+                        if (state.mode == FocusModeType.DEEP_FOCUS)
+                            handleDeepFocusTarget(foregroundPackage, foregroundClass, state, now, DeepFocusDisposition.ALLOW_AND_SUSPEND_OVERLAY)
+                        entry?.let(coordinator::failOpenVisit)
+                    }
+                    else -> {
+                        if (state.mode == FocusModeType.DEEP_FOCUS) {
+                            val suspendOverlay = !input.health.overlayGranted || target.disposition in setOf(
+                                TargetDisposition.LOCK_SCREEN, TargetDisposition.NECESSARY_CALL_UI, TargetDisposition.RECOVERY_SETTINGS_UI)
+                            handleDeepFocusTarget(foregroundPackage, foregroundClass, state, now, if (suspendOverlay)
+                                DeepFocusDisposition.ALLOW_AND_SUSPEND_OVERLAY else DeepFocusDisposition.ALLOW)
+                        } else if (state.mode == FocusModeType.FOCUS && now >= state.endTimeMillis) repository.stopIfExpired(now)
+                        // Generic exempt windows cannot execute cached Daily/Session. Only actual managed entry can.
+                        entry?.let { enforceEngineEntry(it, target) }
+                    }
+                }
+            }, legacy = { reason ->
+                if (BuildConfig.DEBUG) rulesShadow?.fallback(reason)
+                legacyWindow(foregroundPackage, foregroundClass, state, now, entry)
+            })
+        }
+    }
+
+    /** Emergency pre-side-effect fallback only; never called because reverse shadow disagrees. */
+    private fun legacyWindow(foregroundPackage: String, foregroundClass: String?, state: FocusModeState, now: Long,
+        entry: com.example.timemanager.domain.intervention.ForegroundEntry?) {
         if (state.mode == FocusModeType.DEEP_FOCUS) {
-            handleDeepFocusEvent(event, state, now)
+            handleDeepFocusTarget(foregroundPackage, foregroundClass, state, now)
             if (entry != null && coordinator.isCurrent(entry)) {
                 if (state.isDeepFocusActive(now)) coordinator.allowEntry(entry)
                 else enforceFrictionEntry(entry)
@@ -200,6 +252,17 @@ class TimeManagerAccessibilityService : AccessibilityService() {
             if (!shouldBlock) entry?.let(::enforceFrictionEntry)
             return
         }
+        executeFocusBlock(foregroundPackage, state)
+    }
+
+    /** Existing Focus execution, with selection already made by Engine (or explicit fallback). */
+    private fun executeFocusBlock(foregroundPackage: String, state: FocusModeState) {
+        if (focusState != state || !state.isActive()) return
+        val revision = coordinator.currentAccessibilityPolicyRevision()
+        val elapsed = SystemClock.elapsedRealtime()
+        val action = FocusEnforcementActionPolicy.decide(true, overlay.isShowing,
+            foregroundPackage == lastBlockedPackage && elapsed - lastBlockedAt < DEBOUNCE_MILLIS)
+        if (!action.performHome) return
         lastBlockedPackage = foregroundPackage
         lastBlockedAt = elapsed
 
@@ -216,14 +279,9 @@ class TimeManagerAccessibilityService : AccessibilityService() {
                     packageManager.getApplicationLabel(info).toString()
                 }.getOrDefault(foregroundPackage)
             }.also { appNameCache[foregroundPackage] = it }
-            if (!FocusEnforcementPolicy.shouldBlock(
-                    focusState,
-                    foregroundPackage,
-                    packageName,
-                    System.currentTimeMillis(),
-                )
-            ) return@launch
+            if (focusState != state || !state.isActive() || revision != coordinator.currentAccessibilityPolicyRevision()) return@launch
             if (!coordinator.dismissLowerForFocus() ||
+                focusState != state || revision != coordinator.currentAccessibilityPolicyRevision() ||
                 !coordinator.claimOverlay(InterventionPriority.FOCUS, packageName)
             ) return@launch
             val shown = overlay.show(appName, focusState.endTimeMillis) {
@@ -238,6 +296,9 @@ class TimeManagerAccessibilityService : AccessibilityService() {
     override fun onInterrupt() = Unit
 
     override fun onDestroy() {
+        if (::rulesFacts.isInitialized) rulesFacts.close()
+        rulesShadow?.close()
+        rulesShadow = null
         coordinator.setAccessibilityConnected(false)
         PermissionHealthManager.get(applicationContext).refresh()
         homeCommandsJob?.cancel()
@@ -255,6 +316,9 @@ class TimeManagerAccessibilityService : AccessibilityService() {
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
+        if (::rulesFacts.isInitialized) rulesFacts.close()
+        rulesShadow?.close()
+        rulesShadow = null
         coordinator.setAccessibilityConnected(false)
         PermissionHealthManager.get(applicationContext).refresh()
         homeCommandsJob?.cancel()
@@ -290,10 +354,73 @@ class TimeManagerAccessibilityService : AccessibilityService() {
         }
     }
 
+    private fun enforceEngineEntry(entry: com.example.timemanager.domain.intervention.ForegroundEntry, target: TargetFacts) {
+        serviceScope.launch {
+            try {
+                val revision = coordinator.currentAccessibilityPolicyRevision()
+                val previousSequence = coordinator.readDailyObservation(entry.packageName)?.sequence ?: 0L
+                val prepared = coordinator.prepareEntryFacts(entry, revision)
+                if (!coordinator.isCurrent(entry)) return@launch
+                if (prepared == null) {
+                    // Missing Monitor/configuration is a pre-effect unavailable state, never a cached Daily decision.
+                    if (BuildConfig.DEBUG) rulesShadow?.fallback("fresh entry preparation unavailable; fail open")
+                    coordinator.failOpenVisit(entry)
+                    return@launch
+                }
+                val input = rulesFacts.snapshot(target, focusState, AccessibilityObservationScope.REENTRY, entry, prepared)
+                val decision = if (!AccessibilityEntryFreshness.matches(entry, previousSequence,
+                        input.identity.usageDayKey.value, prepared.publication) ||
+                    prepared.baseLimitSeconds != input.policy.baseLimitSeconds) AccessibilityAuthorityDecision.Stale
+                    else rulesAuthority.decide(input)
+                if (BuildConfig.DEBUG) rulesShadow?.observeAuthority(input, decision,
+                    AccessibilityLegacyIntent.forEntry(input, deepFocusEssentials))
+                if (decision == AccessibilityAuthorityDecision.Stale || !rulesFacts.isCurrent(input) ||
+                    !coordinator.preparedEntryIsCurrent(prepared, input.identity.usageDayKey.value)) {
+                    coordinator.discardEntryPreparation(entry)
+                    return@launch
+                }
+                AccessibilityAuthorityDispatch.execute(decision, {
+                    rulesFacts.isCurrent(input) && coordinator.preparedEntryIsCurrent(prepared, input.identity.usageDayKey.value)
+                }, engine = { plan ->
+                    coordinator.publishAccessibilityFocusSelection(entry.packageName, input.focus,
+                        plan.evaluation.selected?.kind in setOf(RuleKind.FOCUS, RuleKind.DEEP_FOCUS))
+                    when (plan.projection.intent) {
+                        AccessibilityIntent.BLOCK_FOCUS -> executeFocusBlock(entry.packageName, input.focus)
+                        AccessibilityIntent.BLOCK_DEEP -> handleDeepFocusTarget(target.packageName, target.className,
+                            input.focus, input.time.wallNowMillis, DeepFocusDisposition.BLOCK)
+                        else -> coordinator.executePreparedEntry(prepared, entryAction(plan.projection.intent))
+                    }
+                }, legacy = { reason ->
+                    if (BuildConfig.DEBUG) rulesShadow?.fallback(reason)
+                    // Reuse the already-prepared facts; no second checkEntry/refresh and no prior Engine effects.
+                    when (val legacy = AccessibilityLegacyIntent.forEntry(input, deepFocusEssentials)) {
+                        AccessibilityIntent.BLOCK_FOCUS -> executeFocusBlock(entry.packageName, input.focus)
+                        AccessibilityIntent.BLOCK_DEEP -> handleDeepFocusTarget(target.packageName, target.className,
+                            input.focus, input.time.wallNowMillis)
+                        else -> coordinator.executePreparedEntry(prepared, entryAction(legacy))
+                    }
+                })
+            } catch (error: CancellationException) { throw error }
+            catch (error: Exception) {
+                // Execution failure is fail-open, NEVER another rule path.
+                coordinator.failOpenVisit(entry)
+                Log.e(TAG, "authoritative entry failed; no legacy retry", error)
+            }
+        }
+    }
+
+    private fun entryAction(intent: AccessibilityIntent) = when (intent) {
+        AccessibilityIntent.SUPPRESS_SESSION_DAILY -> com.example.timemanager.domain.intervention.AccessibilityEntryAction.DAILY
+        AccessibilityIntent.CHECK_SESSION_REENTRY -> com.example.timemanager.domain.intervention.AccessibilityEntryAction.SESSION
+        AccessibilityIntent.FAIL_OPEN -> com.example.timemanager.domain.intervention.AccessibilityEntryAction.FAIL_OPEN
+        else -> com.example.timemanager.domain.intervention.AccessibilityEntryAction.ALLOW
+    }
+
     private fun enforceFrictionEntry(entry: com.example.timemanager.domain.intervention.ForegroundEntry) {
         serviceScope.launch {
             try {
-                when (coordinator.checkEntry(entry)) {
+                val result = coordinator.checkEntry(entry)
+                when (result) {
                     EntryCheckResult.HANDLED -> Unit
                     EntryCheckResult.UNAVAILABLE -> coordinator.failOpenVisit(entry)
                     EntryCheckResult.CHECK_FRICTION -> {
@@ -393,26 +520,22 @@ class TimeManagerAccessibilityService : AccessibilityService() {
         Log.d(TAG, "deepOverlayRequested shown=$shown status=${state.status}")
     }
 
-    private fun handleDeepFocusEvent(
-        event: AccessibilityEvent,
-        state: FocusModeState,
-        nowMillis: Long,
-    ) {
+    private fun handleDeepFocusTarget(foregroundPackage: String, foregroundClass: String?, state: FocusModeState,
+        nowMillis: Long, engineDisposition: DeepFocusDisposition? = null) {
         if (!state.isDeepFocusActive(nowMillis) && !state.isDeepFocusCompleted()) {
             if (nowMillis >= state.endTimeMillis) {
                 serviceScope.launch { repository.stopIfExpired(nowMillis) }
             }
             return
         }
-        val foregroundPackage = event.packageName?.toString() ?: return
-        val foregroundClass = event.className?.toString()
-        val disposition = DeepFocusEnforcementPolicy.evaluate(
+        val overlayGranted = Settings.canDrawOverlays(this)
+        val disposition = engineDisposition ?: DeepFocusEnforcementPolicy.evaluate(
             state = state,
             foregroundPackage = foregroundPackage,
             foregroundClass = foregroundClass,
             essentials = deepFocusEssentials,
             keyguardLocked = keyguardManager.isKeyguardLocked,
-            overlayPermissionGranted = Settings.canDrawOverlays(this),
+            overlayPermissionGranted = overlayGranted,
             nowMillis = nowMillis,
         )
         Log.d(

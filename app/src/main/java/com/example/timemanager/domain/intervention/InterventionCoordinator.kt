@@ -23,7 +23,19 @@ data class DailyLimitSnapshot(
     val isOverLimit: Boolean,
 )
 
+/** Publication metadata only; the Daily snapshot still has its single existing owner/map. */
+data class DailyReadObservation(val snapshot: DailyLimitSnapshot, val entry: ForegroundEntry?, val sequence: Long)
+
+/** Facts-only reply. Does not imply that Daily, admission or a Gate was executed. */
+data class PreparedAccessibilityEntry(val entry: ForegroundEntry, val publication: DailyReadObservation,
+    val baseLimitSeconds: Long?, val policyRevision: Long)
+
+enum class AccessibilityEntryAction { ALLOW, DAILY, SESSION, FAIL_OPEN }
+
 sealed interface MonitorInterventionCommand {
+    data class PrepareEntry(val entry: ForegroundEntry, val revision: Long,
+        val result: CompletableDeferred<PreparedAccessibilityEntry?>) : MonitorInterventionCommand
+    data class ExecuteEntry(val facts: PreparedAccessibilityEntry, val action: AccessibilityEntryAction) : MonitorInterventionCommand
     data class CheckEntry(val entry: ForegroundEntry, val result: CompletableDeferred<EntryCheckResult>) : MonitorInterventionCommand
     data class AcceptedEntry(val entry: ForegroundEntry) : MonitorInterventionCommand
     data class ShowReentryGate(val entry: ForegroundEntry) : MonitorInterventionCommand
@@ -48,6 +60,8 @@ class InterventionCoordinator(
     val monitorCommands = monitorEvents.asSharedFlow()
     val accessibilityCommands = accessibilityEvents.asSharedFlow()
     private val daily = mutableMapOf<String, DailyLimitSnapshot>()
+    private val dailyPublications = mutableMapOf<String, Pair<ForegroundEntry?, Long>>()
+    private var dailyPublicationSequence = 0L
     private var managedPackages = emptySet<String>()
     private var focusState = FocusModeState()
     private var foregroundPackage: String? = null
@@ -63,6 +77,15 @@ class InterventionCoordinator(
     val accessibilityConnection = mutableAccessibilityConnection.asStateFlow()
     val accessibilityConnected: Boolean get() = mutableAccessibilityConnection.value
     private var overlayPausesTiming = false
+    private var accessibilityPolicyRevision = 0L
+    private var executedEntry: ForegroundEntry? = null
+    private val evaluatedFocusTargets = mutableMapOf<String, Pair<FocusModeState, Boolean>>()
+
+    @Synchronized fun updateAccessibilityPolicyRevision(revision: Long) { accessibilityPolicyRevision = revision }
+    @Synchronized fun currentAccessibilityPolicyRevision(): Long = accessibilityPolicyRevision
+    @Synchronized fun publishAccessibilityFocusSelection(packageName: String, state: FocusModeState, blocked: Boolean) {
+        evaluatedFocusTargets[packageName] = state to blocked
+    }
 
     @Synchronized fun setAccessibilityConnected(connected: Boolean, launcherPackage: String? = null) {
         if (connected && launcherPackage != null) sessionHomeLauncher = launcherPackage
@@ -71,6 +94,7 @@ class InterventionCoordinator(
         hasForegroundObservation = false
         homeTransitionTarget = null
         if (!connected) {
+            evaluatedFocusTargets.clear()
             foregroundPackage?.let(friction::onForegroundLeft)
             foregroundPackage = null
             lastStablePackage.value = null
@@ -84,20 +108,37 @@ class InterventionCoordinator(
     @Synchronized fun updateManagedPackages(packages: Set<String>) {
         managedPackages = packages.toSet()
         daily.keys.retainAll(packages)
+        dailyPublications.keys.retainAll(packages)
         friction.retainManagedApps(packages)
     }
 
-    @Synchronized fun updateFocus(state: FocusModeState) { focusState = state }
+    @Synchronized fun updateFocus(state: FocusModeState) {
+        if (focusState != state) evaluatedFocusTargets.clear()
+        focusState = state
+    }
 
-    @Synchronized fun isFocusBlocking(packageName: String): Boolean =
-        focusState.isDeepFocusActive(wallClock()) ||
+    @Synchronized fun isFocusBlocking(packageName: String): Boolean {
+        val evaluated = evaluatedFocusTargets[packageName]
+        if (evaluated?.first == focusState &&
+            (focusState.isActive(wallClock()) || focusState.isDeepFocusActive(wallClock()))) return evaluated.second
+        return focusState.isDeepFocusActive(wallClock()) ||
             FocusEnforcementPolicy.shouldBlock(focusState, packageName, ownPackage, wallClock())
+    }
 
-    @Synchronized fun publishDaily(packageName: String, snapshot: DailyLimitSnapshot) {
+    @Synchronized fun publishDaily(packageName: String, snapshot: DailyLimitSnapshot, entry: ForegroundEntry? = null) {
         daily[packageName] = snapshot
+        dailyPublications[packageName] = (entry ?: foregroundObservation()?.takeIf { it.packageName == packageName }) to ++dailyPublicationSequence
     }
 
     @Synchronized fun dailySnapshot(packageName: String): DailyLimitSnapshot? = daily[packageName]
+
+    @Synchronized fun readDailyObservation(packageName: String): DailyReadObservation? {
+        val snapshot = daily[packageName] ?: return null
+        val publication = dailyPublications[packageName] ?: return null
+        return DailyReadObservation(snapshot, publication.first, publication.second)
+    }
+
+    @Synchronized fun isManagedForRules(packageName: String): Boolean = packageName in managedPackages
 
     /** Called only for real package transitions, not own-overlay/System UI window changes. */
     @Synchronized fun onForegroundChanged(packageName: String?): ForegroundEntry? {
@@ -123,6 +164,10 @@ class InterventionCoordinator(
         if (stableAppWindow) onForegroundChanged(packageName) else null
 
     @Synchronized fun stableForegroundPackage(): String? = lastStablePackage.value
+
+    /** Observation only: exposes the existing generation without establishing a new visit. */
+    @Synchronized fun foregroundObservation(): ForegroundEntry? =
+        foregroundPackage?.let { ForegroundEntry(it, generation) }
 
     @Synchronized fun awaitingStableExit(packageName: String): Boolean = homeTransitionTarget == packageName
 
@@ -236,6 +281,35 @@ class InterventionCoordinator(
             ?: EntryCheckResult.UNAVAILABLE.also { response.cancel() }
     }
 
+    suspend fun prepareEntryFacts(entry: ForegroundEntry, revision: Long): PreparedAccessibilityEntry? {
+        if (monitorEvents.subscriptionCount.value == 0) return null
+        val response = CompletableDeferred<PreparedAccessibilityEntry?>()
+        monitorEvents.emit(MonitorInterventionCommand.PrepareEntry(entry, revision, response))
+        return withTimeoutOrNull(COMMAND_TIMEOUT_MILLIS) { response.await() }
+            .also { if (!response.isCompleted) response.cancel() }
+    }
+
+    @Synchronized fun preparedEntryIsCurrent(facts: PreparedAccessibilityEntry, usageDayKey: String): Boolean =
+        isCurrent(facts.entry) && facts.policyRevision == accessibilityPolicyRevision &&
+            facts.publication.entry == facts.entry && facts.publication.snapshot.usageDayKey == usageDayKey &&
+            readDailyObservation(facts.entry.packageName) == facts.publication
+
+    /** Called at execution, not evaluation. A real generation can be dispatched at most once. */
+    @Synchronized fun claimPreparedEntry(facts: PreparedAccessibilityEntry, usageDayKey: String): Boolean {
+        if (!preparedEntryIsCurrent(facts, usageDayKey) || executedEntry == facts.entry) return false
+        executedEntry = facts.entry
+        return true
+    }
+
+    /** Discard stale work without admitting a visit or consuming Episode/Gate/token state. */
+    @Synchronized fun discardEntryPreparation(entry: ForegroundEntry) {
+        if (isCurrent(entry) && pendingEntry == entry) pendingEntry = null
+    }
+
+    suspend fun executePreparedEntry(facts: PreparedAccessibilityEntry, action: AccessibilityEntryAction) {
+        monitorEvents.emit(MonitorInterventionCommand.ExecuteEntry(facts, action))
+    }
+
     suspend fun requestReentryGate(entry: ForegroundEntry) {
         monitorEvents.emit(MonitorInterventionCommand.ShowReentryGate(entry))
     }
@@ -281,6 +355,7 @@ class InterventionCoordinator(
 
     @Synchronized fun monitorStopped() {
         daily.clear()
+        dailyPublications.clear()
         managedPackages = emptySet()
         pendingEntry = null
         if (overlayOwner?.first?.let { it <= InterventionPriority.DAILY } == true) overlayOwner = null

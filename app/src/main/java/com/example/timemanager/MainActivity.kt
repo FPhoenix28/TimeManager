@@ -121,6 +121,7 @@ class MainActivity : ComponentActivity() {
     private var todosBackDestination = AppDestination.HOME
     private lateinit var usageHistoryBackfillManager: UsageHistoryBackfillManager
     private var detailPackageName: String? = null
+    private var detailBackDestination = AppDestination.HOME
     private var appHistoryPackageName: String? = null
     private var appHistoryBackDestination = AppDestination.HOME
     private var permissionsBackDestination = AppDestination.HOME
@@ -189,6 +190,7 @@ class MainActivity : ComponentActivity() {
                 interventionRepository = interventionRepository,
                 usageHistoryRepository = usageHistoryRepository,
                 trackedAppRepository = trackedAppRepository,
+                installedAppRepository = installedAppRepository,
             ),
         )[HomeViewModel::class.java]
         limitViewModel = ViewModelProvider(
@@ -366,6 +368,7 @@ class MainActivity : ComponentActivity() {
                                     destination = AppDestination.LIMITS
                                 },
                                 onOpenAppDetail = { packageName ->
+                                    detailBackDestination = AppDestination.HOME
                                     detailPackageName = packageName
                                     managedAppDetailViewModel.open(packageName)
                                     destination = AppDestination.MANAGED_APP_DETAIL
@@ -405,6 +408,12 @@ class MainActivity : ComponentActivity() {
                                 viewModel = limitViewModel,
                                 onBack = { destination = AppDestination.HOME },
                                 showBack = false,
+                                onOpenAppDetail = { packageName ->
+                                    detailBackDestination = AppDestination.LIMITS
+                                    detailPackageName = packageName
+                                    managedAppDetailViewModel.open(packageName)
+                                    destination = AppDestination.MANAGED_APP_DETAIL
+                                },
                                 onAddApp = {
                                     appSelectionViewModel.loadIfNeeded()
                                     destination = AppDestination.APP_SELECTION
@@ -473,7 +482,8 @@ class MainActivity : ComponentActivity() {
                             AppDestination.MANAGED_APP_DETAIL -> ManagedAppDetailScreen(
                                 viewModel = managedAppDetailViewModel,
                                 onBack = {
-                                    destination = AppDestination.HOME
+                                    destination = detailBackDestination
+                                    if (destination == AppDestination.LIMITS) limitViewModel.loadApps()
                                     homeViewModel.loadTodayUsage()
                                 },
                                 onRemoved = {
@@ -550,6 +560,7 @@ class MainActivity : ComponentActivity() {
         outState.putString(STATE_PERMISSION_BACK_DESTINATION, permissionsBackDestination.name)
         outState.putString(STATE_HISTORY_BACK_DESTINATION, appHistoryBackDestination.name)
         outState.putString(STATE_DETAIL_PACKAGE, detailPackageName)
+        outState.putString("detailBackDestination", detailBackDestination.name)
         outState.putString(STATE_HISTORY_PACKAGE, appHistoryPackageName)
         outState.putString(STATE_TODOS_BACK, todosBackDestination.name)
         super.onSaveInstanceState(outState)
@@ -566,6 +577,8 @@ class MainActivity : ComponentActivity() {
             .getString(STATE_HISTORY_BACK_DESTINATION)
             .toAppDestinationOrDefault(AppDestination.HOME)
         detailPackageName = savedInstanceState.getString(STATE_DETAIL_PACKAGE)
+        detailBackDestination = savedInstanceState.getString("detailBackDestination")
+            ?.let { AppDestination.valueOf(it) } ?: AppDestination.HOME
         appHistoryPackageName = savedInstanceState.getString(STATE_HISTORY_PACKAGE)
         todosBackDestination = savedInstanceState.getString(STATE_TODOS_BACK)
             .toAppDestinationOrDefault(AppDestination.HOME)

@@ -10,16 +10,22 @@ import android.util.Log
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import com.example.timemanager.domain.todo.TodoRuntime
 import com.example.timemanager.data.model.LimitInterventionRequest
 import com.example.timemanager.data.model.InterventionType
 import com.example.timemanager.ui.theme.TimeManagerTheme
 import com.example.timemanager.utils.OverlayPermissionManager
+import com.example.timemanager.config.BuildTimeConfig
+import com.example.timemanager.config.TimeConfigProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /** Displays one full-screen Compose overlay above the currently used app. */
-class InterventionOverlayController(context: Context) {
+class InterventionOverlayController(
+    context: Context,
+    private val timingProvider: TimeConfigProvider = BuildTimeConfig.provider,
+) {
     private val context = context.applicationContext
     private val windowManager = context.getSystemService(WindowManager::class.java)
     private var overlayView: ComposeView? = null
@@ -31,7 +37,8 @@ class InterventionOverlayController(context: Context) {
     suspend fun show(
         request: LimitInterventionRequest,
         onExit: () -> Unit,
-        onContinue: () -> Unit,
+        onContinue: () -> Unit = {},
+        onContinueWithExtension: ((Long) -> Unit)? = null,
     ): Boolean = withContext(Dispatchers.Main.immediate) {
         Log.d(TAG, "show requested packageName=${request.packageName}")
         if (isOverlayShowing) {
@@ -56,10 +63,17 @@ class InterventionOverlayController(context: Context) {
                 setContent {
                     TimeManagerTheme {
                         val todoSummary by TodoRuntime.get(context).summaryProvider.summary.collectAsState()
+                        val timingFlow = remember(timingProvider) { timingProvider.observe() }
+                        val timing by timingFlow.collectAsState(timingProvider.current())
+                        val displayedRequest = request.copy(extensionDurationSeconds = timing.extensionDurationSeconds)
                         LimitReachedScreen(
-                            request = request,
+                            request = displayedRequest,
                             onExit = onExit,
-                            onContinue = onContinue,
+                            onContinue = {
+                                if (request.type == InterventionType.DAILY_LIMIT_REACHED && onContinueWithExtension != null)
+                                    onContinueWithExtension(displayedRequest.extensionDurationSeconds)
+                                else onContinue()
+                            },
                             todoSummary = todoSummary,
                         )
                     }

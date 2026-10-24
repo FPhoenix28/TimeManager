@@ -49,7 +49,7 @@ class LimitViewModel(
                     installedAppsByPackage = installedApps.associateBy(InstalledApp::packageName)
                     val trackedPackages = trackedAppRepository.observeTrackedPackageNames().first()
                     val limitsByPackage = trackedPackages.associateWith { packageName ->
-                        limitRepository.observeLimit(packageName).first()?.limitMinutes
+                        limitRepository.observeLimit(packageName).first()
                     }
                     val usageByPackage = usageTimeRepository.getTodayUsage()
                         .associateBy { usage -> usage.packageName }
@@ -66,7 +66,8 @@ class LimitViewModel(
                                         ?.usageTimeMillis
                                         ?.div(MILLIS_PER_SECOND)
                                         ?: 0L,
-                                    limitMinutes = limitsByPackage[app.packageName],
+                                    limitMinutes = limitsByPackage[app.packageName]?.limitMinutes,
+                                    limitSeconds = limitsByPackage[app.packageName]?.limitSeconds,
                                 )
                             }
                             .sortedBy { app -> app.appName.lowercase() }
@@ -131,6 +132,10 @@ class LimitViewModel(
         val limitMinutes = editor.limitInput.toIntOrNull()
         if (limitMinutes == null) {
             updateEditor { it.copy(errorMessage = "请输入有效分钟数") }
+            return
+        }
+        if (com.example.timemanager.config.BuildTimeConfig.supportsPreciseAppDurations && limitMinutes <= 0) {
+            updateEditor { it.copy(errorMessage = "请输入正数分钟；秒级时间可在应用详情中调整") }
             return
         }
         Log.d(

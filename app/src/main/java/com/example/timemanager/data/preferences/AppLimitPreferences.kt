@@ -6,6 +6,8 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
+import com.example.timemanager.config.BuildTimeConfig
 import androidx.datastore.preferences.preferencesDataStore
 import java.io.IOException
 import kotlinx.coroutines.flow.Flow
@@ -17,8 +19,34 @@ private val Context.appLimitDataStore: DataStore<Preferences> by preferencesData
 )
 
 /** Stores the daily usage limit associated with each application package. */
-class AppLimitPreferences(context: Context) {
-    private val dataStore = context.applicationContext.appLimitDataStore
+class AppLimitPreferences(
+    private val dataStore: DataStore<Preferences>,
+    private val allowSeconds: Boolean = BuildTimeConfig.supportsPreciseAppDurations,
+) {
+    constructor(context: Context) : this(context.applicationContext.appLimitDataStore)
+
+    fun observeLimitSeconds(packageName: String): Flow<Long?> = safePreferences.map {
+        if (allowSeconds) it[secondsKey(packageName)] ?: it[limitKey(packageName)]?.times(60L)
+        else it[limitKey(packageName)]?.times(60L)
+    }
+
+    fun observeAllLimitSeconds(): Flow<Map<String, Long>> = safePreferences.map { preferences ->
+        val limits = preferences.asMap().mapNotNull { (key, value) ->
+            if (key.name.startsWith(LIMIT_KEY_PREFIX) && value is Int)
+                key.name.removePrefix(LIMIT_KEY_PREFIX) to value * 60L else null
+        }.toMap().toMutableMap()
+        if (allowSeconds) preferences.asMap().forEach { (key, value) ->
+            if (key.name.startsWith(SECONDS_KEY_PREFIX) && value is Long)
+                limits[key.name.removePrefix(SECONDS_KEY_PREFIX)] = value
+        }
+        limits
+    }
+
+    suspend fun setLimitSeconds(packageName: String, seconds: Long) {
+        check(allowSeconds)
+        require(seconds in 1L..359_999L)
+        dataStore.edit { it[secondsKey(packageName)] = seconds }
+    }
 
     fun observeLimitMinutes(packageName: String): Flow<Int?> {
         val key = limitKey(packageName)
@@ -45,6 +73,7 @@ class AppLimitPreferences(context: Context) {
         val key = limitKey(packageName)
         dataStore.edit { preferences ->
             preferences[key] = limitMinutes
+            preferences.remove(secondsKey(packageName))
         }
     }
 
@@ -52,6 +81,7 @@ class AppLimitPreferences(context: Context) {
         val key = limitKey(packageName)
         dataStore.edit { preferences ->
             preferences.remove(key)
+            preferences.remove(secondsKey(packageName))
         }
     }
 
@@ -69,7 +99,13 @@ class AppLimitPreferences(context: Context) {
         return intPreferencesKey("$LIMIT_KEY_PREFIX$packageName")
     }
 
+    private fun secondsKey(packageName: String): Preferences.Key<Long> {
+        require(packageName.isNotBlank())
+        return longPreferencesKey("$SECONDS_KEY_PREFIX$packageName")
+    }
+
     private companion object {
         const val LIMIT_KEY_PREFIX = "daily_limit_minutes:"
+        const val SECONDS_KEY_PREFIX = "daily_limit_seconds:"
     }
 }

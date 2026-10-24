@@ -1,6 +1,7 @@
 package com.example.timemanager.ui.limit
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,6 +48,7 @@ fun LimitScreen(
     onOpenPermissions: () -> Unit,
     modifier: Modifier = Modifier,
     showBack: Boolean = true,
+    onOpenAppDetail: (String) -> Unit = viewModel::beginEdit,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     BackHandler(onBack = onBack)
@@ -60,7 +62,8 @@ fun LimitScreen(
                 showBack = showBack,
                 onAddApp = onAddApp,
                 onOpenPermissions = onOpenPermissions,
-                onEdit = viewModel::beginEdit,
+                onEdit = if (com.example.timemanager.config.BuildTimeConfig.supportsPreciseAppDurations)
+                    onOpenAppDetail else viewModel::beginEdit,
                 onRemove = viewModel::removeManagedApp,
                 modifier = modifier,
             )
@@ -210,6 +213,8 @@ private fun ManagedAppRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .then(if (com.example.timemanager.config.BuildTimeConfig.supportsPreciseAppDurations)
+                Modifier.clickable(enabled = !app.isRemoving, onClick = onEdit) else Modifier)
             .padding(vertical = TimeManagerSpacing.medium),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -223,7 +228,9 @@ private fun ManagedAppRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                app.limitMinutes?.let { "每日额度 $it 分钟" } ?: "每日额度未设置",
+                if (com.example.timemanager.config.BuildTimeConfig.supportsPreciseAppDurations)
+                    app.limitSeconds?.let { "每日额度 ${com.example.timemanager.ui.detail.formatAppDetailDuration(it)}" } ?: "每日额度未设置"
+                else app.limitMinutes?.let { "每日额度 $it 分钟" } ?: "每日额度未设置",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

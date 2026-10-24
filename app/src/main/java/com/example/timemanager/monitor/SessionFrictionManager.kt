@@ -1,6 +1,7 @@
 package com.example.timemanager.monitor
 
 import com.example.timemanager.config.TimeConfig
+import com.example.timemanager.config.TimeConfigProvider
 import com.example.timemanager.data.model.SessionFrictionState
 import com.example.timemanager.data.model.SessionGate
 import com.example.timemanager.data.model.SessionGatePhase
@@ -11,6 +12,7 @@ class SessionFrictionManager(
     private val gateDurationMillis: Long = TimeConfig.FRICTION_GATE_SECONDS * 1_000L,
     private val idleResetMillis: Long = TimeConfig.FRICTION_RESET_IDLE_SECONDS * 1_000L,
     private val bypassDurationMillis: Long = TimeConfig.FRICTION_BYPASS_SECONDS * 1_000L,
+    private val timeConfigProvider: TimeConfigProvider? = null,
 ) {
     private val episodes = mutableMapOf<String, SessionFrictionState>()
     private var actualForegroundPackage: String? = null
@@ -92,7 +94,8 @@ class SessionFrictionManager(
         state.pendingGate?.let { return it }
         if (phase == SessionGatePhase.REENTRY && !state.reentryGateArmed) return null
         if (phase == SessionGatePhase.REMINDER && !isReminderDue(packageName)) return null
-        val gate = SessionGate(++nextGateId, phase, clock() + gateDurationMillis)
+        val duration = timeConfigProvider?.current()?.frictionGateSeconds?.times(1_000L) ?: gateDurationMillis
+        val gate = SessionGate(++nextGateId, phase, clock() + duration)
         episodes[packageName] = state.copy(
             isActive = true,
             pendingGate = gate,
@@ -108,11 +111,16 @@ class SessionFrictionManager(
         val gate = state.pendingGate ?: return
         if (gate.id != gateId || gate.phase != SessionGatePhase.REMINDER || gate.reminderCommitted) return
         val count = state.reminderCount + 1
+        val timing = timeConfigProvider?.current() ?: TimeConfig.production()
+        val increment = when (count) {
+            1 -> timing.sessionFirstIncrementSeconds
+            2 -> timing.sessionSecondIncrementSeconds
+            else -> timing.sessionRepeatingIncrementSeconds
+        }
         episodes[packageName] = state.copy(
             reminderCount = count,
             reentryGateArmed = armReentry,
-            nextReminderAtSeconds = state.nextReminderAtSeconds +
-                if (count <= 2) 8L * 60L else 5L * 60L,
+            nextReminderAtSeconds = state.nextReminderAtSeconds + increment,
             pendingGate = gate.copy(reminderCommitted = true),
         )
     }
@@ -130,7 +138,8 @@ class SessionFrictionManager(
         if (gate.id != gateId || clock() < gate.endTimeMillis) return false
         episodes[packageName] = state.copy(
             pendingGate = null,
-            bypassExpiresAtMillis = clock() + bypassDurationMillis,
+            bypassExpiresAtMillis = clock() +
+                (timeConfigProvider?.current()?.frictionBypassSeconds?.times(1_000L) ?: bypassDurationMillis),
             lastEngagementTimeMillis = clock(),
         )
         return true
@@ -176,9 +185,10 @@ class SessionFrictionManager(
 
     @Synchronized fun expireIdleEpisodes(): Set<String> {
         val now = clock()
+        val idleDuration = timeConfigProvider?.current()?.frictionResetIdleSeconds?.times(1_000L) ?: idleResetMillis
         val expired = episodes.values.filter { state ->
             state.pendingGate == null && state.packageName != actualForegroundPackage &&
-                now - state.lastEngagementTimeMillis >= idleResetMillis
+                now - state.lastEngagementTimeMillis >= idleDuration
         }.map { it.packageName }.toSet()
         expired.forEach(episodes::remove)
         return expired
