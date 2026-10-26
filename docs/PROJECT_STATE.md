@@ -57,7 +57,19 @@ Focus Mode persists selected blocked packages and an end time. Accessibility enf
 
 Deep Focus persists mode, status and timing. The lifecycle is **ACTIVE → COMPLETED → OFF**. Ordinary-app enforcement stops at expiration, independent of whether the user dismisses the completion screen. The full-screen overlay has an early-end flow with a hold and confirmation.
 
-Necessary system exceptions include lockscreen, launcher, input method, System UI, selected recovery settings and recognized in-call/emergency activities. The default dialer package is not permanently blanket-allowed. Real incoming-call compatibility still needs device validation.
+### Authoritative product intent — owner clarification, 2026-10-24
+
+Deep Focus aims for **maximal distraction blocking** while active. Ordinary third-party apps, system apps without an explicit exemption, ordinary Android/vendor Settings, service/Overlay/app-detail settings and vivo `VivoSubSettings` may be blocked and returned HOME. Settings/recovery UI is **not guaranteed accessible** during Deep Focus; blocking a vendor settings-detail page is acceptable product behavior, not by itself a defect.
+
+Necessary system/safety surfaces may be explicitly and narrowly exempt: TimeManager's required own surfaces, launcher/HOME, necessary SystemUI, lockscreen, recognized incoming/ongoing-call and emergency UI, and essential system-operation surfaces. These exceptions preserve basic safe operation, not a Settings bypass. The default dialer package is not permanently blanket-allowed. Real incoming-call compatibility still needs device validation.
+
+Existing input-method and selected Android recovery-page exemptions are retained compatibility behavior, not a promise that all recovery pages or service details can be reached. The Android Accessibility list being allowed while vivo's generic service detail is blocked is acceptable for this round. No blanket Settings-package whitelist or vendor exception is implied, and this clarification changes no production behavior.
+
+**Do not broaden Deep Focus exemptions merely to make a vendor settings page reachable. Any new exemption requires an explicit product decision.** A future request to block all Settings pages is a separate implementation and device-acceptance task, not authorized by this clarification.
+
+Business selection and capability must remain distinct: missing application Overlay does not mean the Deep business rule becomes Allow or that protection succeeded. The current rule may still match Deep and execute fail-open for the missing capability, without treating that as normal legacy fallback. While Deep is active, lower-priority Daily/Session interventions must not preempt it. This task does not redesign necessary exceptions or failure handling.
+
+The [Phase4.3B acceptance report](testing/2026-10-23-v0.10.0-phase4-3-accessibility-shadow.md#phase43b-authoritative-device-acceptance) preserves runtime observations and separately records owner acceptance of bounded B/D/K evidence; it does not claim those missing checks were run.
 
 ## Statistics
 

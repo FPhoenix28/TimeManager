@@ -13,6 +13,7 @@ class TimeManagerApplication : Application() {
     private val todoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     override fun onCreate() {
         super.onCreate()
+        com.example.timemanager.config.BuildTimeConfig.initialize(this)
         TodoRuntime.get(this)
         todoScope.launch {
             try { TodoReminderScheduler(this@TimeManagerApplication).ensureScheduled() }

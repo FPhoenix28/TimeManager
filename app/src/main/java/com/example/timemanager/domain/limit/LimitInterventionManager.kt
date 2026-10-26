@@ -9,15 +9,18 @@ import com.example.timemanager.data.model.UsageLimitEvaluation
 import com.example.timemanager.data.repository.InterventionRepository
 import com.example.timemanager.config.BuildTimeConfig
 import com.example.timemanager.config.TimeConfig
+import com.example.timemanager.config.TimeConfigProvider
 import com.example.timemanager.utils.UsageDayProvider
 
 /** Owns soft-limit display, effective daily allowance, and extension decisions. */
 class LimitInterventionManager(
     private val repository: InterventionRepository,
     private val usageDayProvider: UsageDayProvider,
-    private val timeConfig: TimeConfig = BuildTimeConfig.value,
+    private val timeConfig: TimeConfig? = null,
     private val currentTimeMillis: () -> Long = System::currentTimeMillis,
+    private val timeConfigProvider: TimeConfigProvider = BuildTimeConfig.provider,
 ) {
+    private fun timing(): TimeConfig = timeConfig ?: timeConfigProvider.current()
     private val stateCache = mutableMapOf<String, InterventionState>()
     private val retryAfterByPackage = mutableMapOf<String, Long>()
     private val lastTriggeredLimitByPackage = mutableMapOf<String, TriggeredLimit>()
@@ -29,13 +32,34 @@ class LimitInterventionManager(
         triggerState.onManagedAppEntered(packageName)
     }
 
+    /** Read under the monitor's existing timing lock; never consumes an edge or schedules retry. */
+    fun readRulesSnapshot(packageName: String, usageDayKey: String, currentOverLimit: Boolean, nowMillis: Long): RulesReadSnapshot {
+        val edge = triggerState.readSnapshot(packageName, usageDayKey)
+        val retryReady = retryAfterByPackage[packageName]?.let { nowMillis >= it } == true
+        return RulesReadSnapshot(edge.previousOverLimit, edge.enteredThisVisit, retryReady,
+            currentOverLimit && (!edge.previousOverLimit || edge.enteredThisVisit || retryReady),
+            visiblePackageName != null)
+    }
+
+    data class RulesReadSnapshot(
+        val previousOverLimit: Boolean,
+        val enteredThisVisit: Boolean,
+        val retryReady: Boolean,
+        val displayEligible: Boolean,
+        val displayOccupied: Boolean,
+    )
+
     suspend fun getEffectiveLimit(
         packageName: String,
         baseDailyLimitMinutes: Int,
+    ): EffectiveAppLimit = getEffectiveLimitSeconds(packageName, baseDailyLimitMinutes * SECONDS_PER_MINUTE)
+
+    suspend fun getEffectiveLimitSeconds(
+        packageName: String,
+        baseLimitSeconds: Long,
     ): EffectiveAppLimit {
         val usageDayKey = usageDayProvider.currentUsageDay().key
         val state = getState(packageName, usageDayKey)
-        val baseLimitSeconds = baseDailyLimitMinutes * SECONDS_PER_MINUTE
         return EffectiveAppLimit(
             packageName = packageName,
             baseLimitSeconds = baseLimitSeconds,
@@ -121,7 +145,7 @@ class LimitInterventionManager(
                 exceededSeconds = (evaluation.usedSeconds - evaluation.limitSeconds)
                     .coerceAtLeast(0L),
                 currentSessionSeconds = currentSessionSeconds,
-                extensionDurationSeconds = timeConfig.extensionDurationSeconds,
+                extensionDurationSeconds = timing().extensionDurationSeconds,
             ),
         )
     }
@@ -129,6 +153,7 @@ class LimitInterventionManager(
     suspend fun grantConfiguredExtension(
         packageName: String,
         baseLimitSeconds: Long,
+        extensionSeconds: Long = timing().extensionDurationSeconds,
     ): Boolean {
         if (visiblePackageName != packageName) return false
         val usageDayKey = usageDayProvider.currentUsageDay().key
@@ -136,7 +161,7 @@ class LimitInterventionManager(
         val state = repository.grantExtension(
             packageName = packageName,
             usageDayKey = usageDayKey,
-            extensionSeconds = timeConfig.extensionDurationSeconds,
+            extensionSeconds = extensionSeconds,
         )
         stateCache[packageName] = state
         triggerState.onLimitExtended(packageName, usageDayKey)
@@ -219,6 +244,13 @@ internal class LimitInterventionTriggerState {
 
     private val previousStateByPackage = mutableMapOf<String, PreviousState>()
     private val pendingAppEntries = mutableSetOf<String>()
+
+    data class ReadSnapshot(val previousOverLimit: Boolean, val enteredThisVisit: Boolean)
+
+    fun readSnapshot(packageName: String, usageDayKey: String): ReadSnapshot = ReadSnapshot(
+        previousStateByPackage[packageName]?.takeIf { it.usageDayKey == usageDayKey }?.isOverLimit ?: false,
+        packageName in pendingAppEntries,
+    )
 
     fun onManagedAppEntered(packageName: String) {
         pendingAppEntries += packageName

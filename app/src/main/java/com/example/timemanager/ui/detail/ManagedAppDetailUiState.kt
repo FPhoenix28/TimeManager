@@ -29,6 +29,7 @@ sealed interface ManagedAppDetailUiState {
         val sessionEditor: SessionReminderEditorUiState? = null,
         val isRemoving: Boolean = false,
         val errorMessage: String? = null,
+        val sessionReminderSeconds: Long = sessionReminderMinutes * 60L,
     ) : ManagedAppDetailUiState
 }
 

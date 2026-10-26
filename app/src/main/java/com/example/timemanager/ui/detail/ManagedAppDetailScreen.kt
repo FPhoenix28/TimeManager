@@ -37,6 +37,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.timemanager.R
+import com.example.timemanager.config.BuildTimeConfig
 import com.example.timemanager.ui.components.AppIcon
 import com.example.timemanager.ui.components.DetailRow
 import com.example.timemanager.ui.components.UsageDurationText
@@ -73,15 +74,30 @@ fun ManagedAppDetailScreen(
         )
 
         is ManagedAppDetailUiState.Ready -> {
+            var durationTarget by remember(current.packageName) { mutableStateOf<Boolean?>(null) }
             DetailContent(
                 state = current,
                 onBack = onBack,
-                onEditLimit = viewModel::beginLimitEdit,
-                onEditSessionReminder = viewModel::beginSessionReminderEdit,
+                onEditLimit = {
+                    if (BuildTimeConfig.supportsPreciseAppDurations) durationTarget = true
+                    else viewModel.beginLimitEdit()
+                },
+                onEditSessionReminder = {
+                    if (BuildTimeConfig.supportsPreciseAppDurations) durationTarget = false
+                    else viewModel.beginSessionReminderEdit()
+                },
                 onRemove = viewModel::removeManagedApp,
                 onOpenHistory = { onOpenHistory(current.packageName) },
                 modifier = modifier,
             )
+            durationTarget?.let { daily ->
+                AppDetailDurationDialog(
+                    title = if (daily) "每日使用额度" else "首次连续提醒",
+                    initialSeconds = if (daily) current.baseLimitSeconds ?: 0L else current.sessionReminderSeconds,
+                    onSave = { viewModel.saveDurationSeconds(daily, it) },
+                    onDismiss = { durationTarget = null },
+                )
+            }
             current.editor?.let { editor ->
                 LimitEditorDialog(
                     editor = editor,
@@ -149,7 +165,8 @@ private fun DetailContent(
             DetailRow(
                 label = "首次连续提醒",
                 icon = R.drawable.ic_bell,
-                value = "${state.sessionReminderMinutes}分钟",
+                value = if (BuildTimeConfig.supportsPreciseAppDurations) formatAppDetailDuration(state.sessionReminderSeconds)
+                    else "${state.sessionReminderMinutes}分钟",
                 onClick = onEditSessionReminder,
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -158,6 +175,7 @@ private fun DetailContent(
             DetailRow(label = "超额冷静提醒", value = "已开启", icon = R.drawable.ic_bell)
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         }
+        item("variantTimingControls") { AppDetailTimingControls() }
         item("todayTitle") {
             SectionTitle("今天")
         }
@@ -305,7 +323,9 @@ private fun TodayUsageSection(state: ManagedAppDetailUiState.Ready) {
         UsageDurationText(state.todayUsageSeconds)
         if (effective != null) {
             Text(
-                text = "${state.todayUsageSeconds / 60L} / ${effective / 60L}分钟",
+                text = if (BuildTimeConfig.supportsPreciseAppDurations)
+                    "${formatAppDetailDuration(state.todayUsageSeconds)} / ${formatAppDetailDuration(effective)}"
+                else "${state.todayUsageSeconds / 60L} / ${effective / 60L}分钟",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -432,7 +452,7 @@ private fun ErrorContent(
     )
 }
 
-private fun formatDuration(seconds: Long): String = formatUsageDuration(seconds)
+private fun formatDuration(seconds: Long): String = formatAppDetailDuration(seconds)
 
 private fun formatSignedDuration(seconds: Long): String =
     if (seconds <= 0L) "0分钟" else "+${formatDuration(seconds)}"

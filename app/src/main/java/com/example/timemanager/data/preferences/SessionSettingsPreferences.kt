@@ -6,6 +6,8 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
+import com.example.timemanager.config.BuildTimeConfig
 import androidx.datastore.preferences.preferencesDataStore
 import java.io.IOException
 import kotlinx.coroutines.flow.Flow
@@ -17,8 +19,34 @@ private val Context.sessionSettingsDataStore: DataStore<Preferences> by preferen
 )
 
 /** Persists an independent continuous-use reminder threshold for each package. */
-class SessionSettingsPreferences(context: Context) {
-    private val dataStore = context.applicationContext.sessionSettingsDataStore
+class SessionSettingsPreferences(
+    private val dataStore: DataStore<Preferences>,
+    private val allowSeconds: Boolean = BuildTimeConfig.supportsPreciseAppDurations,
+) {
+    constructor(context: Context) : this(context.applicationContext.sessionSettingsDataStore)
+
+    fun observeReminderSeconds(packageName: String): Flow<Long?> = safePreferences.map {
+        if (allowSeconds) it[secondsKey(packageName)] ?: it[reminderKey(packageName)]?.times(60L)
+        else it[reminderKey(packageName)]?.times(60L)
+    }
+
+    fun observeAllReminderSeconds(): Flow<Map<String, Long>> = safePreferences.map { preferences ->
+        val settings = preferences.asMap().mapNotNull { (key, value) ->
+            if (key.name.startsWith(KEY_PREFIX) && value is Int)
+                key.name.removePrefix(KEY_PREFIX) to value * 60L else null
+        }.toMap().toMutableMap()
+        if (allowSeconds) preferences.asMap().forEach { (key, value) ->
+            if (key.name.startsWith(SECONDS_KEY_PREFIX) && value is Long)
+                settings[key.name.removePrefix(SECONDS_KEY_PREFIX)] = value
+        }
+        settings
+    }
+
+    suspend fun setReminderSeconds(packageName: String, seconds: Long) {
+        check(allowSeconds)
+        require(seconds in 1L..359_999L)
+        dataStore.edit { it[secondsKey(packageName)] = seconds }
+    }
     private val safePreferences: Flow<Preferences>
         get() = dataStore.data.catch { error ->
             if (error is IOException) emit(emptyPreferences()) else throw error
@@ -41,11 +69,17 @@ class SessionSettingsPreferences(context: Context) {
     }
 
     suspend fun setReminderMinutes(packageName: String, minutes: Int) {
-        dataStore.edit { preferences -> preferences[reminderKey(packageName)] = minutes }
+        dataStore.edit { preferences ->
+            preferences[reminderKey(packageName)] = minutes
+            preferences.remove(secondsKey(packageName))
+        }
     }
 
     suspend fun remove(packageName: String) {
-        dataStore.edit { preferences -> preferences.remove(reminderKey(packageName)) }
+        dataStore.edit { preferences ->
+            preferences.remove(reminderKey(packageName))
+            preferences.remove(secondsKey(packageName))
+        }
     }
 
     private fun reminderKey(packageName: String): Preferences.Key<Int> {
@@ -53,7 +87,13 @@ class SessionSettingsPreferences(context: Context) {
         return intPreferencesKey("$KEY_PREFIX$packageName")
     }
 
+    private fun secondsKey(packageName: String): Preferences.Key<Long> {
+        require(packageName.isNotBlank())
+        return longPreferencesKey("$SECONDS_KEY_PREFIX$packageName")
+    }
+
     private companion object {
         const val KEY_PREFIX = "session_reminder_minutes:"
+        const val SECONDS_KEY_PREFIX = "session_reminder_seconds:"
     }
 }

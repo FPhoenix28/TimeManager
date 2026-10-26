@@ -15,8 +15,8 @@ private val Context.interventionDataStore: DataStore<Preferences> by preferences
 )
 
 /** Stores temporary allowance extensions for one 04:00-based usage day. */
-class InterventionPreferences(context: Context) {
-    private val dataStore = context.applicationContext.interventionDataStore
+class InterventionPreferences(private val dataStore: DataStore<Preferences>) {
+    constructor(context: Context) : this(context.applicationContext.interventionDataStore)
 
     suspend fun getState(packageName: String, usageDayKey: String): InterventionState {
         val current = dataStore.data.first()

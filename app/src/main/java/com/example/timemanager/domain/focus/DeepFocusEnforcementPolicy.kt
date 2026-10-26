@@ -48,7 +48,7 @@ object DeepFocusEnforcementPolicy {
             foregroundPackage != essentials.inputMethodPackage &&
             foregroundPackage !in essentials.systemUiPackages
 
-    private fun isNecessaryCallOrEmergencyUi(
+    internal fun isNecessaryCallOrEmergencyUi(
         packageName: String,
         className: String?,
         essentials: DeepFocusEssentialApps,
@@ -63,7 +63,7 @@ object DeepFocusEnforcementPolicy {
             simpleClassName.contains("callactivity")
     }
 
-    private fun isNecessaryRecoverySettings(
+    internal fun isNecessaryRecoverySettings(
         packageName: String,
         className: String?,
         essentials: DeepFocusEssentialApps,

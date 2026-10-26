@@ -61,7 +61,7 @@ class ManagedAppDetailViewModel(
                 limitRepository.observeLimit(packageName),
                 sessionSettingsRepository.observe(packageName),
             ) { trackedPackages: Set<String>, limit: AppLimit?, session: AppSessionSettings ->
-                DetailSources(packageName in trackedPackages, limit, session.reminderMinutes)
+                DetailSources(packageName in trackedPackages, limit, session.reminderSeconds)
             }.combine(historyRepository.observeAppHistory(packageName,
                 historyEnd.minusDays(13).toString(), historyEnd.toString())) { sources, records ->
                 sources.copy(historyRecords = records)
@@ -74,14 +74,14 @@ class ManagedAppDetailViewModel(
                     }
                     _uiState.value = runCatching {
                         withContext(Dispatchers.IO) {
-                            buildState(packageName, limit, result.sessionReminderMinutes, result.historyRecords, historyEnd)
+                            buildState(packageName, limit, result.sessionReminderSeconds, result.historyRecords, historyEnd)
                         }
                     }.map { fresh ->
                         val old = (_uiState.value as? ManagedAppDetailUiState.Ready)
                             ?.takeIf { it.packageName == fresh.packageName }
                         fresh.copy(
                             editor = old?.editor?.takeIf { old.baseLimitSeconds == fresh.baseLimitSeconds },
-                            sessionEditor = old?.sessionEditor?.takeIf { old.sessionReminderMinutes == fresh.sessionReminderMinutes },
+                            sessionEditor = old?.sessionEditor?.takeIf { old.sessionReminderSeconds == fresh.sessionReminderSeconds },
                             isRemoving = old?.isRemoving == true,
                         )
                     }.getOrElse { error ->
@@ -240,10 +240,21 @@ class ManagedAppDetailViewModel(
         }
     }
 
+    /** Used by the variant-owned editor; saves only configuration, never resets an episode. */
+    suspend fun saveDurationSeconds(daily: Boolean, seconds: Long): String? = runCatching {
+        check(com.example.timemanager.config.BuildTimeConfig.supportsPreciseAppDurations)
+        val pkg = checkNotNull(packageName)
+        withContext(Dispatchers.IO) {
+            check(trackedAppRepository.isTracked(pkg)) { "该应用已不在管理列表中" }
+            if (daily) limitRepository.saveLimitSeconds(pkg, seconds)
+            else sessionSettingsRepository.saveSeconds(pkg, seconds)
+        }
+    }.exceptionOrNull()?.let { it.message ?: "保存失败" }
+
     private suspend fun buildState(
         packageName: String,
         limit: AppLimit?,
-        sessionReminderMinutes: Int,
+        sessionReminderSeconds: Long,
         historyRecords: List<UsageHistoryEntity>,
         historyEnd: LocalDate,
     ): ManagedAppDetailUiState.Ready {
@@ -253,7 +264,7 @@ class ManagedAppDetailViewModel(
             packageName,
             usageDayProvider.currentUsageDay().key,
         ).todayExtensionSeconds
-        val baseSeconds = limit?.limitMinutes?.times(SECONDS_PER_MINUTE)
+        val baseSeconds = limit?.limitSeconds
         val effectiveSeconds = baseSeconds?.plus(extensionSeconds)
         val history = StatisticsCalculator().calculateApp(historyRecords, packageName, historyEnd, 7L)
         return ManagedAppDetailUiState.Ready(
@@ -272,7 +283,8 @@ class ManagedAppDetailViewModel(
             exceededSeconds = effectiveSeconds
                 ?.let { (usageSeconds - it).coerceAtLeast(0L) }
                 ?: 0L,
-            sessionReminderMinutes = sessionReminderMinutes,
+            sessionReminderMinutes = (sessionReminderSeconds / 60L).toInt(),
+            sessionReminderSeconds = sessionReminderSeconds,
             historyTotalSeconds = history.totalUsageSeconds,
             historyChangePercent = history.changePercent,
             isOverLimit = effectiveSeconds != null && usageSeconds >= effectiveSeconds,
@@ -322,7 +334,7 @@ class ManagedAppDetailViewModel(
     private data class DetailSources(
         val isTracked: Boolean,
         val limit: AppLimit?,
-        val sessionReminderMinutes: Int,
+        val sessionReminderSeconds: Long,
         val historyRecords: List<UsageHistoryEntity> = emptyList(),
     )
 }

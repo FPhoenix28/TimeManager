@@ -151,7 +151,6 @@ private fun HomeDashboard(
 ) {
     val managedApps = remember(appUsages) {
         appUsages
-            .filter { it.baseLimitSeconds != null }
             .sortedByDescending(AppUsageWithLimit::usedSeconds)
     }
     val totalUsageSeconds = remember(managedApps) {
@@ -469,4 +468,4 @@ private fun ErrorContent(
     )
 }
 
-private fun formatCompactDuration(seconds: Long): String = formatUsageDuration(seconds)
+private fun formatCompactDuration(seconds: Long): String = com.example.timemanager.ui.detail.formatAppDetailDuration(seconds)

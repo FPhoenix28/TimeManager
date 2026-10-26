@@ -11,6 +11,7 @@ import com.example.timemanager.data.repository.InterventionRepository
 import com.example.timemanager.data.repository.UsageTimeRepository
 import com.example.timemanager.data.repository.UsageHistoryRepository
 import com.example.timemanager.data.repository.TrackedAppRepository
+import com.example.timemanager.data.repository.InstalledAppRepository
 import com.example.timemanager.domain.statistics.StatisticsCalculator
 import com.example.timemanager.utils.UsageDayProvider
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +32,7 @@ class HomeViewModel(
     private val interventionRepository: InterventionRepository,
     private val usageHistoryRepository: UsageHistoryRepository,
     private val trackedAppRepository: TrackedAppRepository,
+    private val installedAppRepository: InstalledAppRepository,
     private val usageDayProvider: UsageDayProvider = UsageDayProvider(),
     private val statisticsCalculator: StatisticsCalculator = StatisticsCalculator(),
 ) : ViewModel() {
@@ -81,8 +83,9 @@ class HomeViewModel(
                     val newState = withContext(Dispatchers.IO) {
                         val limitsByPackage = appLimits.associateBy(AppLimit::packageName)
                         val usageDayKey = usageDayProvider.currentUsageDay().key
-                        val usageWithLimits = appUsages.map { appUsage ->
-                            val baseLimit = limitsByPackage[appUsage.packageName]?.limitMinutes
+                        val managedApps = trackedPackages.mapNotNull(installedAppRepository::getUserInstalledApp)
+                        val usageWithLimits = managedHomeUsage(appUsages, managedApps).map { appUsage ->
+                            val baseLimit = limitsByPackage[appUsage.packageName]?.limitSeconds
                             val extensionSeconds = if (baseLimit == null) {
                                 0L
                             } else {
@@ -91,9 +94,7 @@ class HomeViewModel(
                                     usageDayKey,
                                 ).todayExtensionSeconds
                             }
-                            val baseLimitSeconds = baseLimit?.let { savedMinutes ->
-                                savedMinutes * SECONDS_PER_MINUTE
-                            }
+                            val baseLimitSeconds = baseLimit
                             AppUsageWithLimit(
                                 packageName = appUsage.packageName,
                                 appName = appUsage.appName,
@@ -136,6 +137,7 @@ class HomeViewModel(
         private val interventionRepository: InterventionRepository,
         private val usageHistoryRepository: UsageHistoryRepository,
         private val trackedAppRepository: TrackedAppRepository,
+        private val installedAppRepository: InstalledAppRepository,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -146,6 +148,7 @@ class HomeViewModel(
                     interventionRepository,
                     usageHistoryRepository,
                     trackedAppRepository,
+                    installedAppRepository,
                 ) as T
             }
             throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")

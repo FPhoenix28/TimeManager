@@ -72,6 +72,13 @@ android {
     }
 }
 
+// Host-only Release isolation tests; does not package, sign or install Release.
+androidComponents {
+    beforeVariants(selector().withBuildType("release")) { variant ->
+        variant.hostTests[com.android.build.api.variant.HostTestBuilder.UNIT_TEST_TYPE]?.enable = true
+    }
+}
+
 dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)

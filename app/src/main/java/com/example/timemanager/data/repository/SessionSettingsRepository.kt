@@ -9,15 +9,20 @@ class SessionSettingsRepository(
     private val preferences: SessionSettingsPreferences,
 ) {
     fun observe(packageName: String): Flow<AppSessionSettings> =
-        preferences.observeReminderMinutes(packageName).map { storedMinutes ->
+        preferences.observeReminderSeconds(packageName).map { storedSeconds ->
             AppSessionSettings(
                 packageName = packageName,
-                reminderMinutes = storedMinutes ?: DEFAULT_REMINDER_MINUTES,
+                reminderMinutes = ((storedSeconds ?: DEFAULT_REMINDER_MINUTES * 60L) / 60L).toInt(),
+                reminderSeconds = storedSeconds ?: DEFAULT_REMINDER_MINUTES * 60L,
             )
         }
 
     fun observeStoredSettings(): Flow<Map<String, Int>> =
         preferences.observeAllReminderMinutes()
+
+    fun observeStoredSeconds(): Flow<Map<String, Long>> = preferences.observeAllReminderSeconds()
+
+    suspend fun saveSeconds(packageName: String, seconds: Long) = preferences.setReminderSeconds(packageName, seconds)
 
     suspend fun save(packageName: String, reminderMinutes: Int) {
         require(reminderMinutes in MIN_REMINDER_MINUTES..MAX_REMINDER_MINUTES)
