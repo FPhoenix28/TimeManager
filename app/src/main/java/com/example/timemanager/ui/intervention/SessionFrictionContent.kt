@@ -48,6 +48,7 @@ internal fun SessionFrictionContent(
     ResponsiveInterventionScaffold(
         containerColor = MaterialTheme.colorScheme.secondaryContainer,
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        keepActionsVisible = true,
         header = {
             Text("先停一下", style = MaterialTheme.typography.headlineMedium,
                 modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
@@ -79,14 +80,14 @@ internal fun SessionFrictionContent(
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center,
             )
-            TodoOverlaySummary(todoSummary)
+            SessionTodoCard(todoSummary)
         },
         actions = {
-            Button(onClick = onContinue, enabled = actionsEnabled, modifier = Modifier.fillMaxWidth()) {
-                Text("继续使用")
-            }
-            OutlinedButton(onClick = onStayHome, enabled = actionsEnabled, modifier = Modifier.fillMaxWidth()) {
+            Button(onClick = onStayHome, enabled = actionsEnabled, modifier = Modifier.fillMaxWidth()) {
                 Text(if (reentry) "留在桌面" else "返回桌面")
+            }
+            OutlinedButton(onClick = onContinue, enabled = actionsEnabled, modifier = Modifier.fillMaxWidth()) {
+                Text("继续使用")
             }
         },
     )

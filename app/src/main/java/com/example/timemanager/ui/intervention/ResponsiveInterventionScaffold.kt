@@ -31,7 +31,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.timemanager.ui.theme.TimeManagerSpacing
 
-/** Layout only: callers retain the intervention state, countdown and all action callbacks. */
+/** Layout only: callers retain state/deadlines/callbacks. Session alone reserves portrait actions. */
 @Composable
 internal fun ResponsiveInterventionScaffold(
     containerColor: Color,
@@ -44,6 +44,7 @@ internal fun ResponsiveInterventionScaffold(
     scrimAlpha: Float = 0.82f,
     portraitMaxWidth: Dp = OverlayLayoutPolicy.PORTRAIT_CARD_MAX_WIDTH_DP.dp,
     shape: Shape = MaterialTheme.shapes.extraLarge,
+    keepActionsVisible: Boolean = false,
 ) {
     val latestHeader by rememberUpdatedState(header)
     val latestContent by rememberUpdatedState(mainContent)
@@ -105,6 +106,24 @@ internal fun ResponsiveInterventionScaffold(
                             modifier = Modifier
                                 .width(OverlayLayoutPolicy.ACTIONS_WIDTH_DP.dp)
                                 .verticalScroll(actionsScroll),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.compact),
+                            content = actions,
+                        )
+                    }
+                } else if (keepActionsVisible) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(TimeManagerSpacing.large),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.compact),
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(portraitScroll),
+                        ) {
+                            information(false)
+                        }
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.compact),
                             content = actions,
