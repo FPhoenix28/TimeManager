@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -110,7 +111,7 @@ fun HomeScreen(
 }
 
 @Composable
-private fun FocusHomeFallback(
+internal fun FocusHomeFallback(
     permissionHealth: PermissionHealthState,
     todoViewModel: TodoViewModel,
     onOpenTodos: () -> Unit,
@@ -121,21 +122,32 @@ private fun FocusHomeFallback(
     message: String,
     modifier: Modifier = Modifier,
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(TimeManagerSpacing.medium),
-        verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.medium),
+    LazyColumn(
+        modifier = modifier.fillMaxSize().imePadding(),
+        contentPadding = PaddingValues(
+            start = TimeManagerSpacing.medium,
+            top = TimeManagerSpacing.small,
+            end = TimeManagerSpacing.medium,
+            bottom = TimeManagerSpacing.extraLarge,
+        ),
     ) {
-        HomeTopBar(onOpenSettings, !permissionHealth.isHealthy)
-        FocusModeEntries(focusState, onOpenFocus, onOpenDeepFocus)
-        TodoHomeSection(todoViewModel, onOpenTodos)
-        Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        item("topBar") { HomeTopBar(onOpenSettings, !permissionHealth.isHealthy) }
+        item("todaySummary") {
+            Column(Modifier.padding(top = TimeManagerSpacing.large)) {
+                Text("今日已使用", style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("—", style = MaterialTheme.typography.displaySmall)
+                Text(message, style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        item("todos") { TodoHomeSection(todoViewModel, onOpenTodos) }
+        item("focusEntry") { FocusModeEntries(focusState, onOpenFocus, onOpenDeepFocus) }
     }
 }
 
 @Composable
-private fun HomeDashboard(
+internal fun HomeDashboard(
     todoViewModel: TodoViewModel,
     onOpenTodos: () -> Unit,
     appUsages: List<AppUsageWithLimit>,
@@ -158,7 +170,7 @@ private fun HomeDashboard(
     }
 
     LazyColumn(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize().imePadding(),
         contentPadding = PaddingValues(
             start = TimeManagerSpacing.medium,
             top = TimeManagerSpacing.small,
@@ -176,6 +188,8 @@ private fun HomeDashboard(
                 totalUsageSeconds = totalUsageSeconds,
             )
         }
+
+        item("todos") { TodoHomeSection(todoViewModel, onOpenTodos) }
 
         item("focusEntry") {
             FocusModeEntries(focusState, onOpenFocus, onOpenDeepFocus)
@@ -228,7 +242,6 @@ private fun HomeDashboard(
                 )
             }
         }
-        item("todos") { TodoHomeSection(todoViewModel, onOpenTodos) }
     }
 }
 

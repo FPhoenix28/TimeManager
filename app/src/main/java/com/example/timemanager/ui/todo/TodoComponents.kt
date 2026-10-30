@@ -10,10 +10,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.timemanager.data.local.TodoEntity
 import com.example.timemanager.domain.todo.TODO_TITLE_MAX_LENGTH
@@ -80,25 +82,70 @@ fun TodoRow(todo: TodoEntity, viewModel: TodoViewModel, showMenu: Boolean = true
 fun TodoHomeSection(viewModel: TodoViewModel, onOpenAll: () -> Unit) {
     val state by viewModel.dayState.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
-    val visible = remember(state) { state.unfinished.take(2) }
-    Column(Modifier.fillMaxWidth().padding(top = TimeManagerSpacing.medium)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("今日待办", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-            TextButton(onClick = onOpenAll) { Text("查看全部 ›") }
-        }
-        if (state.unfinished.isEmpty()) Text("写下一件想完成的事", style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-        visible.forEachIndexed { index, todo ->
-            if (todo.createdUsageDay == state.usageDay && index > 0 && visible[index - 1].createdUsageDay < state.usageDay) {
-                HorizontalDivider(Modifier.padding(vertical = TimeManagerSpacing.small))
+    val unfinished = remember(state) { state.unfinished }
+    val visible = remember(unfinished) { unfinished.take(3) }
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(top = TimeManagerSpacing.large),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(TimeManagerSpacing.medium)) {
+            TodoHomeHeader(unfinished.size, onOpenAll)
+            if (unfinished.isEmpty()) {
+                Text(
+                    text = if (state.usageDay.isBlank()) "正在读取待办…" else "写下一件想完成的事",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = TimeManagerSpacing.small),
+                )
             }
-            key(todo.id) { TodoRow(todo, viewModel, showMenu = false) }
+            visible.forEachIndexed { index, todo ->
+                if (todo.createdUsageDay == state.usageDay && index > 0 && visible[index - 1].createdUsageDay < state.usageDay) {
+                    HorizontalDivider(Modifier.padding(vertical = TimeManagerSpacing.small))
+                }
+                key(todo.id) { TodoRow(todo, viewModel, showMenu = false) }
+            }
+            if (unfinished.size > visible.size) {
+                Text(
+                    text = "还有 ${unfinished.size - visible.size} 项",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = TimeManagerSpacing.extraSmall),
+                )
+            }
+            TodoInput(viewModel)
+            message?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         }
-        if (state.unfinished.size > visible.size) Text("还有 ${state.unfinished.size - visible.size} 项",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        TodoInput(viewModel)
-        message?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
     }
+}
+
+@Composable
+private fun TodoHomeHeader(unfinishedCount: Int, onOpenAll: () -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if (maxWidth < 240.dp || LocalDensity.current.fontScale > 1.3f) {
+            Column(Modifier.fillMaxWidth()) {
+                TodoHomeTitle(unfinishedCount)
+                TextButton(onClick = onOpenAll, modifier = Modifier.align(Alignment.End)) {
+                    Text("查看全部", maxLines = 1)
+                }
+            }
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) { TodoHomeTitle(unfinishedCount) }
+                TextButton(onClick = onOpenAll) { Text("查看全部", maxLines = 1) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TodoHomeTitle(unfinishedCount: Int) {
+    Text("今日待办", style = MaterialTheme.typography.titleMedium)
+    Text(
+        text = "$unfinishedCount 项未完成",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 @Composable

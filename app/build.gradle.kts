@@ -70,6 +70,9 @@ android {
         buildConfig = true
         compose = true
     }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 // Host-only Release isolation tests; does not package, sign or install Release.
@@ -96,6 +99,8 @@ dependencies {
     implementation(libs.androidx.work.runtime)
     ksp(libs.androidx.room.compiler)
     testImplementation(libs.junit)
+    "testDebugImplementation"(libs.robolectric)
+    "testDebugImplementation"(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)
