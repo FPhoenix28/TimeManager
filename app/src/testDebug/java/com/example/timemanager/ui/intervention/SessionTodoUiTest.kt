@@ -93,7 +93,7 @@ class SessionTodoUiTest {
         val view = compose.activity.window.decorView
         val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
         view.draw(Canvas(bitmap))
-        val directory = File("build/reports/todo-session-phase3").apply { mkdirs() }
+        val directory = File("build/reports/ui-polish/session").apply { mkdirs() }
         File(directory, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         bitmap.recycle()
     }
@@ -303,6 +303,20 @@ class SessionTodoUiTest {
         compose.onAllNodes(hasClickAction()).assertCountEquals(3)
     }
 
+    private fun assertConfirmationContent() {
+        compose.onNodeWithText("先停一下").assertDoesNotExist()
+        compose.onNodeWithText("准备开始静心").assertIsDisplayed()
+        compose.onNodeWithText("给自己一点时间，结束手头的事情。").assertIsDisplayed()
+        val start = compose.onNodeWithText("5 分钟后自动开始").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val duration = compose.onNodeWithText("静心持续 30 分钟").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        assertTrue(start.bottom <= duration.top)
+        compose.onNodeWithText("暂时限制其他普通应用", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("取消安排", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("确认安排").assertIsDisplayed()
+        compose.onNodeWithText("取消").assertIsDisplayed()
+        compose.onAllNodes(hasClickAction()).assertCountEquals(2)
+    }
+
     @Test fun delayedActionWaitsForGateAndConfirmationCanBeCancelled() {
         compose.mainClock.autoAdvance = false
         var schedules = 0
@@ -310,7 +324,7 @@ class SessionTodoUiTest {
         compose.mainClock.advanceTimeByFrame()
         assertThreeActions(enabled = false)
         compose.onNodeWithText("5 分钟后静心").performClick()
-        compose.onNodeWithText("安排静心？").assertDoesNotExist()
+        compose.onNodeWithText("准备开始静心").assertDoesNotExist()
         ShadowSystemClock.advanceBy(Duration.ofSeconds(6))
         compose.mainClock.advanceTimeBy(1_000L)
         assertThreeActions()
@@ -318,8 +332,8 @@ class SessionTodoUiTest {
         compose.mainClock.autoAdvance = true
         capture("three-actions-light")
         compose.onNodeWithText("5 分钟后静心").performClick()
-        compose.onNodeWithText("安排静心？").assertIsDisplayed()
-        compose.onNodeWithText("将在约 5 分钟后自动开始 30 分钟静心模式。静心期间，除必要系统功能外，将暂时限制其他应用。").assertIsDisplayed()
+        assertConfirmationContent()
+        capture("confirmation-v2-light")
         compose.onNodeWithText("取消").performClick()
         assertThreeActions()
         compose.runOnIdle { assertEquals(0, schedules) }
@@ -334,11 +348,12 @@ class SessionTodoUiTest {
             onContinue = { continues++ }, onHome = { homes++ })
         assertThreeActions()
         compose.onNodeWithText("5 分钟后静心").performClick()
-        capture("confirmation-dark")
+        assertConfirmationContent()
+        capture("confirmation-v2-dark")
         compose.onNodeWithText("确认安排").performClick()
         compose.onNodeWithText("正在安排…").assertIsNotEnabled().performClick()
         compose.runOnIdle { assertEquals(1, schedules); assertEquals(0, continues); completion.complete(Unit) }
-        compose.onNodeWithText("先停一下").assertIsDisplayed()
+        assertThreeActions()
         compose.runOnIdle { assertEquals(1, continues); assertEquals(0, homes) }
     }
 
@@ -381,14 +396,24 @@ class SessionTodoUiTest {
     }
 
     @Test
+    fun smallPortraitLargeFontKeepsConfirmationActionsReachable() {
+        show(onSchedule = {}, dark = true, width = 320, height = 480, fontScale = 2f)
+        compose.onNodeWithText("5 分钟后静心").performClick()
+        capture("confirmation-v2-small-dark")
+        assertConfirmationContent()
+        val duration = compose.onNodeWithText("静心持续 30 分钟").fetchSemanticsNode().boundsInRoot
+        val confirm = compose.onNodeWithText("确认安排").fetchSemanticsNode().boundsInRoot
+        assertTrue(duration.bottom <= confirm.top)
+    }
+
+    @Test
     @Config(qualifiers = "w800dp-h360dp-land-xhdpi")
     fun landscapeLargeFontSupportsThreeActionsAndConfirmation() {
         show(summary(3), onSchedule = {}, dark = true, width = 800, height = 360, fontScale = 2f)
         assertThreeActions()
         compose.onNodeWithText("5 分钟后静心").performClick()
-        compose.onNodeWithText("确认安排").assertIsDisplayed()
-        compose.onNodeWithText("取消").assertIsDisplayed()
-        capture("confirmation-landscape-dark")
+        assertConfirmationContent()
+        capture("confirmation-v2-landscape-dark")
     }
 
     @Test fun pendingStatusProvidesInAppCancelWithoutNotificationPermission() {

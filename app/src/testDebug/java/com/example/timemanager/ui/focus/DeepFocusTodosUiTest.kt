@@ -3,6 +3,7 @@ package com.example.timemanager.ui.focus
 import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.provider.Settings
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
@@ -37,6 +38,7 @@ import java.io.File
 import java.time.Clock
 import java.time.OffsetDateTime
 import java.time.ZoneId
+import java.time.ZonedDateTime
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -100,7 +102,7 @@ class DeepFocusTodosUiTest {
         val view = compose.activity.window.decorView
         val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
         view.draw(Canvas(bitmap))
-        val directory = File("build/reports/deep-focus-todos-phase4").apply { mkdirs() }
+        val directory = File("build/reports/ui-polish/deep-focus").apply { mkdirs() }
         File(directory, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         bitmap.recycle()
     }
@@ -118,6 +120,7 @@ class DeepFocusTodosUiTest {
         show(state(1))
         compose.onNodeWithText("1 项未完成").assertIsDisplayed()
         compose.onNodeWithText("待办 1").assertIsDisplayed()
+        compose.onNodeWithText("滑动查看全部待办").assertDoesNotExist()
         compose.onNodeWithText("现在不需要做任何事").assertDoesNotExist()
         compose.onAllNodes(hasClickAction()).assertCountEquals(0)
         val list = compose.onNode(hasScrollToIndexAction()).fetchSemanticsNode().boundsInRoot
@@ -135,9 +138,13 @@ class DeepFocusTodosUiTest {
         capture("deep-three-light")
     }
 
-    @Test fun tenTodosAreAllReachableWithoutMovingTheExitControl() {
+    @Test
+    @Config(qualifiers = "zh-rCN-w360dp-h800dp-xhdpi")
+    fun tenTodosAreAllReachableWithoutMovingTheExitControl() {
+        Settings.System.putString(compose.activity.contentResolver, Settings.System.TIME_12_24, "24")
         show(state(10), dark = true)
         compose.onNodeWithText("10 项未完成").assertIsDisplayed()
+        compose.onNodeWithText("滑动查看全部待办").assertIsDisplayed()
         val before = compose.onNodeWithText(holdText).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
         capture("deep-ten-dark")
         val list = compose.onNode(hasScrollToIndexAction())
@@ -146,6 +153,27 @@ class DeepFocusTodosUiTest {
             compose.onNodeWithText("待办 ${index + 1}").assertIsDisplayed()
             assertEquals(before, compose.onNodeWithText(holdText).assertIsDisplayed().fetchSemanticsNode().boundsInRoot)
         }
+    }
+
+    @Test
+    @Config(qualifiers = "zh-rCN-w360dp-h800dp-xhdpi")
+    fun endTimeUsesChineseLocaleAndDeviceClockPreference() {
+        val now = ZonedDateTime.now()
+        val afternoon = now.toLocalDate().plusDays(1).atTime(15, 0).atZone(now.zone)
+        val settings = compose.activity.contentResolver
+        Settings.System.putString(settings, Settings.System.TIME_12_24, "24")
+        val state = focus().copy(endTimeMillis = afternoon.toInstant().toEpochMilli())
+        show(active = state)
+        compose.onNodeWithText("结束时间  15:00").assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w360dp-h800dp-xhdpi")
+    fun endTimeCanUseTwelveHourClock() {
+        Settings.System.putString(compose.activity.contentResolver, Settings.System.TIME_12_24, "12")
+        show()
+        compose.onNode(hasText("结束时间", substring = true) and
+            (hasText("AM", substring = true) or hasText("PM", substring = true))).assertIsDisplayed()
     }
 
     @Test fun repositoryCompletionAndFourAmCarryOverRefreshTheSameList() {
@@ -198,6 +226,10 @@ class DeepFocusTodosUiTest {
         compose.onNodeWithText(lastTitle).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
         assertTrue(layouts.single().lineCount > 1)
         assertFalse(layouts.single().didOverflowWidth)
+        compose.onNodeWithText("静心模式").assertIsDisplayed()
+        compose.onNode(SemanticsMatcher("countdown") { node ->
+            node.config.getOrElse(SemanticsProperties.Text) { emptyList() }.any { it.text.matches(Regex("\\d{2}:\\d{2}")) }
+        }).assertIsDisplayed()
         compose.onNodeWithText(holdText).assertIsDisplayed()
         capture("deep-small-todos-dark")
     }

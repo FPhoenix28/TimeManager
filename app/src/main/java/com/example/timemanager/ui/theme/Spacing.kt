@@ -3,6 +3,7 @@ package com.example.timemanager.ui.theme
 import androidx.compose.ui.unit.dp
 
 object TimeManagerSpacing {
+    val hairline = 1.dp
     val extraSmall = 4.dp
     val small = 8.dp
     val compact = 12.dp

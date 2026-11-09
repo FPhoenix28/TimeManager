@@ -104,7 +104,7 @@ class TodoHomeSectionTest {
             val view = compose.activity.window.decorView
             val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
             view.draw(Canvas(bitmap))
-            val directory = File("build/reports/todo-home-phase1").apply { mkdirs() }
+            val directory = File("build/reports/ui-polish/home").apply { mkdirs() }
             File(directory, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
             bitmap.recycle()
         }
@@ -247,7 +247,13 @@ class TodoHomeSectionTest {
         val todos = compose.onNodeWithText("今日待办").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
         val mode = compose.onNodeWithText("专注模式").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
         assertTrue(usage.bottom < todos.top && todos.bottom < mode.top)
-        capture("dashboard-light")
+        capture("dashboard-one-light")
+        runBlocking {
+            repository.create("待办 2")
+            repository.create("待办 3")
+        }
+        (1..3).forEach { compose.onNodeWithText("待办 $it").assertIsDisplayed() }
+        capture("dashboard-three-light")
         compose.onNodeWithText("受管理应用").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("管理").performScrollTo().assertIsDisplayed()
     }
@@ -290,6 +296,9 @@ class TodoHomeSectionTest {
         compose.onNodeWithText("读取使用时间失败：测试错误").performScrollTo().assertIsDisplayed()
         compose.runOnIdle { message = "使用情况访问未开启，使用统计、连续提醒和每日额度判断暂不可用。" }
         compose.onNodeWithText(message).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("受管理应用总使用时间").assertIsDisplayed()
+        compose.onNodeWithText("—").assertIsDisplayed()
+        capture("dashboard-permission-large-font-light")
         compose.onNodeWithText("＋ 添加待办").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("专注模式").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("静心模式").performScrollTo().assertIsDisplayed()

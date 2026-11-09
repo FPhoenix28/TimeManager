@@ -45,16 +45,20 @@ internal fun ResponsiveInterventionScaffold(
     portraitMaxWidth: Dp = OverlayLayoutPolicy.PORTRAIT_CARD_MAX_WIDTH_DP.dp,
     shape: Shape = MaterialTheme.shapes.extraLarge,
     keepActionsVisible: Boolean = false,
+    informationSpacing: Dp = TimeManagerSpacing.compact,
+    actionSpacing: Dp = TimeManagerSpacing.compact,
+    panelPadding: Dp = TimeManagerSpacing.large,
 ) {
     val latestHeader by rememberUpdatedState(header)
     val latestContent by rememberUpdatedState(mainContent)
+    val latestInformationSpacing by rememberUpdatedState(informationSpacing)
     // Keep countdown composition/state when moving information between Column and Row.
     val information = remember {
         movableContentOf<Boolean> { wide ->
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.compact),
+                verticalArrangement = Arrangement.spacedBy(latestInformationSpacing),
             ) {
                 latestHeader(wide)
                 latestContent()
@@ -91,7 +95,7 @@ internal fun ResponsiveInterventionScaffold(
             ) {
                 if (isWide) {
                     Row(
-                        modifier = Modifier.padding(TimeManagerSpacing.large),
+                        modifier = Modifier.padding(panelPadding),
                         horizontalArrangement = Arrangement.spacedBy(TimeManagerSpacing.large),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -107,13 +111,13 @@ internal fun ResponsiveInterventionScaffold(
                                 .width(OverlayLayoutPolicy.ACTIONS_WIDTH_DP.dp)
                                 .verticalScroll(actionsScroll),
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.compact),
                             content = actions,
+                            verticalArrangement = Arrangement.spacedBy(actionSpacing),
                         )
                     }
                 } else if (keepActionsVisible) {
                     Column(
-                        modifier = Modifier.fillMaxWidth().padding(TimeManagerSpacing.large),
+                        modifier = Modifier.fillMaxWidth().padding(panelPadding),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.compact),
                     ) {
@@ -125,13 +129,13 @@ internal fun ResponsiveInterventionScaffold(
                         Column(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.compact),
+                            verticalArrangement = Arrangement.spacedBy(actionSpacing),
                             content = actions,
                         )
                     }
                 } else {
                     Column(
-                        modifier = Modifier.fillMaxWidth().verticalScroll(portraitScroll).padding(TimeManagerSpacing.large),
+                        modifier = Modifier.fillMaxWidth().verticalScroll(portraitScroll).padding(panelPadding),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.compact),
                     ) {

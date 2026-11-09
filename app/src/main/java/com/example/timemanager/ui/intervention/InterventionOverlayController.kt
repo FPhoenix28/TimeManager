@@ -83,7 +83,7 @@ class InterventionOverlayController(
                                 withContext(Dispatchers.Main.immediate) {
                                     Toast.makeText(context,
                                         if (result == DelayedDeepFocusScheduleResult.ALREADY_PENDING) "已有静心安排，仍按原定时间开始，未重新计时。"
-                                        else "已安排约 5 分钟后静心，可在静心模式中取消。", Toast.LENGTH_LONG).show()
+                                        else "已安排约 5 分钟后静心。", Toast.LENGTH_LONG).show()
                                 }
                             },
                         )

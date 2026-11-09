@@ -19,6 +19,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.timemanager.data.local.TodoEntity
 import com.example.timemanager.domain.todo.TODO_TITLE_MAX_LENGTH
+import com.example.timemanager.ui.components.CalmPanel
+import com.example.timemanager.ui.components.CalmPanelTone
 import com.example.timemanager.ui.theme.TimeManagerSpacing
 
 @Composable
@@ -53,13 +55,17 @@ fun TodoInput(viewModel: TodoViewModel) {
 }
 
 @Composable
-fun TodoRow(todo: TodoEntity, viewModel: TodoViewModel, showMenu: Boolean = true) {
+fun TodoRow(todo: TodoEntity, viewModel: TodoViewModel, showMenu: Boolean = true, emphasized: Boolean = false) {
     var menu by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth().padding(vertical = TimeManagerSpacing.extraSmall), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = if (showMenu) TimeManagerSpacing.extraSmall else 0.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Checkbox(checked = todo.isCompleted, onCheckedChange = { viewModel.setCompleted(todo.id, it) },
             modifier = Modifier.semantics { contentDescription = "完成状态：${todo.title}" })
-        Text(todo.title, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis,
+        Text(todo.title, style = if (emphasized) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge,
+            maxLines = 2, overflow = TextOverflow.Ellipsis,
             color = if (todo.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f))
         if (showMenu) Box {
@@ -84,26 +90,26 @@ fun TodoHomeSection(viewModel: TodoViewModel, onOpenAll: () -> Unit) {
     val message by viewModel.message.collectAsStateWithLifecycle()
     val unfinished = remember(state) { state.unfinished }
     val visible = remember(unfinished) { unfinished.take(3) }
-    Card(
+    CalmPanel(
+        tone = CalmPanelTone.INFORMATION,
         modifier = Modifier.fillMaxWidth().padding(top = TimeManagerSpacing.large),
-        shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        contentPadding = PaddingValues(horizontal = TimeManagerSpacing.medium, vertical = TimeManagerSpacing.small),
     ) {
-        Column(Modifier.fillMaxWidth().padding(TimeManagerSpacing.medium)) {
+        Column(Modifier.fillMaxWidth()) {
             TodoHomeHeader(unfinished.size, onOpenAll)
             if (unfinished.isEmpty()) {
                 Text(
                     text = if (state.usageDay.isBlank()) "正在读取待办…" else "写下一件想完成的事",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = TimeManagerSpacing.small),
+                    modifier = Modifier.padding(top = TimeManagerSpacing.extraSmall),
                 )
             }
             visible.forEachIndexed { index, todo ->
                 if (todo.createdUsageDay == state.usageDay && index > 0 && visible[index - 1].createdUsageDay < state.usageDay) {
                     HorizontalDivider(Modifier.padding(vertical = TimeManagerSpacing.small))
                 }
-                key(todo.id) { TodoRow(todo, viewModel, showMenu = false) }
+                key(todo.id) { TodoRow(todo, viewModel, showMenu = false, emphasized = index == 0) }
             }
             if (unfinished.size > visible.size) {
                 Text(
@@ -140,7 +146,7 @@ private fun TodoHomeHeader(unfinishedCount: Int, onOpenAll: () -> Unit) {
 
 @Composable
 private fun TodoHomeTitle(unfinishedCount: Int) {
-    Text("今日待办", style = MaterialTheme.typography.titleMedium)
+    Text("今日待办", style = MaterialTheme.typography.titleLarge)
     Text(
         text = "$unfinishedCount 项未完成",
         style = MaterialTheme.typography.bodySmall,

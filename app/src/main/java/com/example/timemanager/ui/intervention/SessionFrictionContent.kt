@@ -3,6 +3,8 @@ package com.example.timemanager.ui.intervention
 import android.os.SystemClock
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -28,6 +30,8 @@ import com.example.timemanager.data.model.SessionGatePhase
 import com.example.timemanager.domain.todo.TodoSummary
 import com.example.timemanager.domain.intervention.InterventionPresentation
 import com.example.timemanager.domain.intervention.InterventionPresentationPolicy
+import com.example.timemanager.ui.components.CalmPanelTone
+import com.example.timemanager.ui.components.containerColor
 import com.example.timemanager.ui.theme.TimeManagerSpacing
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -64,51 +68,56 @@ internal fun SessionFrictionContent(
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val compactHeight = maxHeight < 520.dp
         ResponsiveInterventionScaffold(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            containerColor = CalmPanelTone.INFORMATION.containerColor,
+            contentColor = MaterialTheme.colorScheme.onSurface,
             keepActionsVisible = true,
+            scrimAlpha = if (confirming) 0.54f else 0.66f,
+            informationSpacing = TimeManagerSpacing.small,
+            actionSpacing = if (confirming && !compactHeight) TimeManagerSpacing.compact else TimeManagerSpacing.small,
+            panelPadding = if (confirming && compactHeight) TimeManagerSpacing.medium else TimeManagerSpacing.large,
             header = {
-                Text(if (confirming) "安排静心？" else "先停一下",
-                    style = if (compactHeight) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium,
-                    modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+                if (!confirming) {
+                    Text("先停一下",
+                        style = if (compactHeight) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium,
+                        modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+                }
             },
             mainContent = {
                 if (confirming) {
-                    // Same overlay window: an Activity-owned Dialog cannot safely attach here.
-                    Text("将在约 5 分钟后自动开始 30 分钟静心模式。静心期间，除必要系统功能外，将暂时限制其他应用。",
-                        style = MaterialTheme.typography.bodyLarge)
-                    Text("确认后按原有规则继续使用。可在 TimeManager → 静心模式中取消安排。",
-                        style = MaterialTheme.typography.bodyMedium)
-                    scheduleError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    DelayedFocusConfirmation(compactHeight, scheduleError)
                 } else {
                     // Countdown and ready state share one region and the same overlay instance.
-                    Box(Modifier.fillMaxWidth().heightIn(min = 72.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.fillMaxWidth().heightIn(min = 56.dp), contentAlignment = Alignment.Center) {
                         Text(
                             if (!actionsEnabled) remaining.toString() else if (reentry) "稍作停留" else "可以决定了",
-                            style = if (!actionsEnabled) {
+                            style = (if (!actionsEnabled) {
                                 if (compactHeight) MaterialTheme.typography.displaySmall else MaterialTheme.typography.displayLarge
-                            } else if (compactHeight) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.headlineLarge,
+                            } else MaterialTheme.typography.titleLarge).copy(fontFeatureSettings = "tnum"),
+                            color = if (!actionsEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.fillMaxWidth(),
                             textAlign = TextAlign.Center,
                         )
                     }
-                    Text(
-                        if (reentry) "你刚刚已经连续使用过${request.appName}。"
-                        else "你已经连续使用${request.appName}${if (request.currentSessionSeconds < 60L) "${request.currentSessionSeconds}秒" else "${request.currentSessionSeconds / 60L}分钟"}。",
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.fillMaxWidth(),
-                        textAlign = TextAlign.Center,
-                    )
-                    Text(
-                        when {
-                            reentry -> "如果仍然想继续，请等待片刻再决定。"
-                            overlayChoice -> "自动返回桌面暂不可用，可在倒计时结束后选择返回桌面。"
-                            else -> "稍微离开屏幕一会儿。"
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.fillMaxWidth(),
-                        textAlign = TextAlign.Center,
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.extraSmall)) {
+                        Text(
+                            if (reentry) "你刚刚已经连续使用过${request.appName}。"
+                            else "你已经连续使用${request.appName}${if (request.currentSessionSeconds < 60L) "${request.currentSessionSeconds}秒" else "${request.currentSessionSeconds / 60L}分钟"}。",
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Center,
+                        )
+                        Text(
+                            when {
+                                reentry -> "如果仍然想继续，请等待片刻再决定。"
+                                overlayChoice -> "自动返回桌面暂不可用，可在倒计时结束后选择返回桌面。"
+                                else -> "稍微离开屏幕一会儿。"
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Center,
+                        )
+                    }
                     SessionTodoCard(todoSummary)
                 }
             },

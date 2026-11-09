@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Card
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -48,9 +48,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import com.example.timemanager.ui.theme.TimeManagerSpacing
+import com.example.timemanager.ui.components.CalmPanelTone
+import com.example.timemanager.ui.components.calmPanelBorder
+import com.example.timemanager.ui.components.containerColor
 import com.example.timemanager.ui.todo.TodoHomeSection
 import com.example.timemanager.ui.todo.TodoViewModel
 import com.example.timemanager.permissions.PermissionHealthState
+
+private const val UsageAccessHint = "开启使用情况访问后，即可查看今日用时并使用额度和连续使用提醒。"
 
 @Composable
 fun HomeScreen(
@@ -79,7 +84,7 @@ fun HomeScreen(
             todoViewModel = todoViewModel,
             onOpenTodos = onOpenTodos,
             message = if (permissionHealth.usageAccessGranted) "正在读取今日使用情况…"
-                else "使用情况访问未开启，使用统计、连续提醒和每日额度判断暂不可用。",
+                else UsageAccessHint,
             modifier = modifier,
         )
         is HomeUiState.Success -> HomeDashboard(
@@ -102,7 +107,8 @@ fun HomeScreen(
             onOpenFocus = onOpenFocus,
             onOpenDeepFocus = onOpenDeepFocus,
             onOpenSettings = onOpenPermissionSettings,
-            message = "读取使用时间失败：${state.message}",
+            message = if (permissionHealth.usageAccessGranted) "暂时无法读取今日用时。"
+                else UsageAccessHint,
             todoViewModel = todoViewModel,
             onOpenTodos = onOpenTodos,
             modifier = modifier,
@@ -133,13 +139,7 @@ internal fun FocusHomeFallback(
     ) {
         item("topBar") { HomeTopBar(onOpenSettings, !permissionHealth.isHealthy) }
         item("todaySummary") {
-            Column(Modifier.padding(top = TimeManagerSpacing.large)) {
-                Text("今日已使用", style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("—", style = MaterialTheme.typography.displaySmall)
-                Text(message, style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            TodaySummary(totalUsageSeconds = null, status = message)
         }
         item("todos") { TodoHomeSection(todoViewModel, onOpenTodos) }
         item("focusEntry") { FocusModeEntries(focusState, onOpenFocus, onOpenDeepFocus) }
@@ -184,8 +184,9 @@ internal fun HomeDashboard(
 
         item("todaySummary") {
             TodaySummary(
-                usageAccessGranted = permissionHealth.usageAccessGranted,
-                totalUsageSeconds = totalUsageSeconds,
+                totalUsageSeconds = totalUsageSeconds.takeIf { permissionHealth.usageAccessGranted },
+                status = if (permissionHealth.usageAccessGranted) null
+                    else UsageAccessHint,
             )
         }
 
@@ -236,10 +237,7 @@ internal fun HomeDashboard(
                     appUsage = appUsage,
                     onClick = { onOpenAppDetail(appUsage.packageName) },
                 )
-                HorizontalDivider(
-                    modifier = Modifier.padding(start = TimeManagerSpacing.medium + TimeManagerSpacing.extraLarge),
-                    color = MaterialTheme.colorScheme.outlineVariant,
-                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
             }
         }
     }
@@ -251,12 +249,14 @@ private fun FocusModeEntries(
     onOpenFocus: () -> Unit,
     onOpenDeepFocus: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.small)) {
+    Column(Modifier.padding(top = TimeManagerSpacing.large),
+        verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.small)) {
         when (focusState.mode) {
             FocusModeType.FOCUS -> {
                 ModeEntry(
                     title = "专注模式",
                     description = if (focusState.isActive()) "专注进行中" else "专注已结束",
+                    icon = R.drawable.ic_focus,
                     onClick = onOpenFocus,
                     endTimeMillis = focusState.endTimeMillis.takeIf { focusState.isActive() },
                 )
@@ -269,21 +269,22 @@ private fun FocusModeEntries(
             FocusModeType.DEEP_FOCUS -> ModeEntry(
                 title = "静心模式",
                 description = if (focusState.isDeepFocusCompleted()) "静心结束" else "静心进行中",
+                icon = R.drawable.ic_leaf,
                 onClick = onOpenDeepFocus,
                 endTimeMillis = focusState.endTimeMillis.takeIf { focusState.isDeepFocusActive() },
             )
             FocusModeType.OFF -> {
-                BoxWithConstraints(Modifier.fillMaxWidth().padding(top = TimeManagerSpacing.large)) {
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
                     val largeFont = LocalDensity.current.fontScale > 1.25f
                     if (maxWidth < 300.dp || largeFont) {
                         Column(verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.small)) {
-                            CompactModeEntry("专注模式", "屏蔽分心应用", R.drawable.ic_focus, onOpenFocus)
-                            CompactModeEntry("静心模式", "暂时离开手机", R.drawable.ic_leaf, onOpenDeepFocus)
+                            ModeEntry("专注模式", "屏蔽分心应用", R.drawable.ic_focus, onOpenFocus)
+                            ModeEntry("静心模式", "暂时离开手机", R.drawable.ic_leaf, onOpenDeepFocus)
                         }
                     } else {
                         Row(horizontalArrangement = Arrangement.spacedBy(TimeManagerSpacing.small)) {
-                            CompactModeEntry("专注模式", "屏蔽分心应用", R.drawable.ic_focus, onOpenFocus, Modifier.weight(1f))
-                            CompactModeEntry("静心模式", "暂时离开手机", R.drawable.ic_leaf, onOpenDeepFocus, Modifier.weight(1f))
+                            ModeEntry("专注模式", "屏蔽分心应用", R.drawable.ic_focus, onOpenFocus, Modifier.weight(1f))
+                            ModeEntry("静心模式", "暂时离开手机", R.drawable.ic_leaf, onOpenDeepFocus, Modifier.weight(1f))
                         }
                     }
                 }
@@ -293,52 +294,34 @@ private fun FocusModeEntries(
 }
 
 @Composable
-private fun CompactModeEntry(title: String, description: String, icon: Int,
-                             onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Card(onClick = onClick, modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
-        Row(Modifier.fillMaxWidth().padding(TimeManagerSpacing.compact),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(TimeManagerSpacing.small)) {
-            Icon(painterResource(icon), null, modifier = Modifier.size(24.dp))
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleSmall)
-                Text(description, style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer)
-            }
-            Icon(painterResource(R.drawable.ic_chevron_right), null, modifier = Modifier.size(12.dp))
-        }
-    }
-}
-
-@Composable
 private fun ModeEntry(
     title: String,
     description: String,
+    icon: Int,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
     endTimeMillis: Long? = null,
 ) {
-    Card(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth().padding(top = TimeManagerSpacing.large),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-        ),
+    OutlinedCard(onClick = onClick, modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.outlinedCardColors(containerColor = CalmPanelTone.IMMERSIVE.containerColor),
+        border = calmPanelBorder,
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(TimeManagerSpacing.medium),
-            horizontalArrangement = Arrangement.SpaceBetween,
+        Row(Modifier.fillMaxWidth().padding(TimeManagerSpacing.compact),
             verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                Text(description, style = MaterialTheme.typography.bodyMedium)
+            horizontalArrangement = Arrangement.spacedBy(TimeManagerSpacing.small)) {
+            Icon(painterResource(icon), null, modifier = Modifier.size(TimeManagerSpacing.large),
+                tint = MaterialTheme.colorScheme.primary)
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleSmall)
+                Text(description, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (endTimeMillis != null) {
                 FocusCountdown(endTimeMillis, MaterialTheme.typography.titleMedium)
             } else {
-                Text("进入 ›", style = MaterialTheme.typography.labelLarge)
+                Icon(painterResource(R.drawable.ic_chevron_right), null, modifier = Modifier.size(TimeManagerSpacing.compact),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -360,8 +343,7 @@ private fun HomeTopBar(onOpenSettings: () -> Unit, showPermissionBadge: Boolean)
         IconButton(onClick = onOpenSettings) {
             BadgedBox(badge = {
                 if (showPermissionBadge) {
-                    Badge(containerColor = MaterialTheme.colorScheme.error,
-                        contentColor = MaterialTheme.colorScheme.onError) { Text("!") }
+                    Badge(containerColor = MaterialTheme.colorScheme.primary)
                 }
             }) {
                 Icon(
@@ -376,21 +358,25 @@ private fun HomeTopBar(onOpenSettings: () -> Unit, showPermissionBadge: Boolean)
 
 @Composable
 private fun TodaySummary(
-    usageAccessGranted: Boolean,
-    totalUsageSeconds: Long,
+    totalUsageSeconds: Long?,
+    status: String? = null,
 ) {
     Column(
         modifier = Modifier.padding(top = TimeManagerSpacing.large),
         verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.extraSmall),
     ) {
-        Text("今日已使用", style = MaterialTheme.typography.titleMedium,
+        Text("今日已使用", style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (usageAccessGranted) UsageDurationText(totalUsageSeconds)
-        else Text("—", style = MaterialTheme.typography.displaySmall)
-        Text(if (usageAccessGranted) "受管理应用总使用时间"
-            else "无法统计应用使用时间，连续使用提醒与每日额度判断暂不可用。",
+        if (totalUsageSeconds != null) UsageDurationText(totalUsageSeconds)
+        else Text("—", style = MaterialTheme.typography.displayLarge)
+        Text("受管理应用总使用时间",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
+        status?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = TimeManagerSpacing.extraSmall))
+        }
     }
 }
 
@@ -421,16 +407,17 @@ private fun ManagedAppUsageItem(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.small),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(TimeManagerSpacing.small)) {
                 Text(
                     text = appUsage.appName,
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
                 Text(
                     text = if (usageAccessGranted) formatCompactDuration(appUsage.usedSeconds) else "—",
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.titleSmall.copy(fontFeatureSettings = "tnum"),
                 )
             }
             if (!usageAccessGranted) {
@@ -441,7 +428,7 @@ private fun ManagedAppUsageItem(
                     progress = progress,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Row {
+                Row(horizontalArrangement = Arrangement.spacedBy(TimeManagerSpacing.small)) {
                     Text(
                         text = if (differenceSeconds == 0L) {
                             "额度已用完"
