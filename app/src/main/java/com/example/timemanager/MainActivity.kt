@@ -28,6 +28,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,10 +36,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.timemanager.data.preferences.AppLimitPreferences
+import com.example.timemanager.data.preferences.AppearancePreferences
 import com.example.timemanager.data.local.AppDatabase
 import com.example.timemanager.data.preferences.RealtimeUsagePreferences
 import com.example.timemanager.data.preferences.InterventionPreferences
@@ -61,7 +64,8 @@ import com.example.timemanager.data.repository.UsageRepository
 import com.example.timemanager.data.repository.UsageTimeRepository
 import com.example.timemanager.data.repository.UsageHistoryRepository
 import com.example.timemanager.domain.history.UsageHistoryBackfillManager
-import com.example.timemanager.ui.theme.TimeManagerTheme
+import com.example.timemanager.ui.theme.StoredTimeManagerTheme
+import com.example.timemanager.ui.theme.usesDarkColors
 import com.example.timemanager.ui.home.HomeScreen
 import com.example.timemanager.ui.home.HomeViewModel
 import com.example.timemanager.ui.detail.ManagedAppDetailScreen
@@ -95,11 +99,13 @@ import com.example.timemanager.domain.todo.TodoRuntime
 import com.example.timemanager.notifications.TodoNotificationHelper
 import com.example.timemanager.ui.todo.TodoScreen
 import com.example.timemanager.ui.todo.TodoViewModel
+import java.io.IOException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    private val appearancePreferences by lazy { AppearancePreferences(applicationContext) }
     private val permissionHealthManager by lazy { PermissionHealthManager.get(applicationContext) }
     private val permissionNotices = PermissionHealthNoticeTracker.process
     private val hasUsageAccess get() = permissionHealthManager.state.value.usageAccessGranted
@@ -273,7 +279,13 @@ class MainActivity : ComponentActivity() {
             }
         }
         setContent {
-            TimeManagerTheme {
+            StoredTimeManagerTheme(appearancePreferences) { themeMode ->
+                val useDarkColors = themeMode.usesDarkColors()
+                SideEffect {
+                    val systemBars = WindowCompat.getInsetsController(window, window.decorView)
+                    systemBars.isAppearanceLightStatusBars = !useDarkColors
+                    systemBars.isAppearanceLightNavigationBars = !useDarkColors
+                }
                 val focusState by focusViewModel.focusState.collectAsStateWithLifecycle()
                 val permissionState by permissionHealthManager.state.collectAsStateWithLifecycle()
                 val snackbarHostState = remember { SnackbarHostState() }
@@ -437,6 +449,17 @@ class MainActivity : ComponentActivity() {
                             )
                             AppDestination.PERMISSIONS -> PermissionSettingsScreen(
                                 state = permissionState,
+                                themeMode = themeMode,
+                                onThemeModeSelected = { mode ->
+                                    lifecycleScope.launch {
+                                        try {
+                                            appearancePreferences.setThemeMode(mode)
+                                        } catch (error: IOException) {
+                                            Log.w(TAG, "Unable to save appearance preference", error)
+                                            snackbarHostState.showSnackbar("无法保存外观设置，请重试。")
+                                        }
+                                    }
+                                },
                                 onBack = { destination = permissionsBackDestination },
                                 onRequestUsageAccess = ::openUsageAccessSettings,
                                 onRequestNotification = ::requestNotificationPermission,

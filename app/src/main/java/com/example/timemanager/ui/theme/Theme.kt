@@ -10,14 +10,25 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.timemanager.data.preferences.AppearancePreferences
 
 enum class ThemeMode {
     SYSTEM,
     LIGHT,
     DARK,
+}
+
+@Composable
+internal fun ThemeMode.usesDarkColors(): Boolean = when (this) {
+    ThemeMode.SYSTEM -> isSystemInDarkTheme()
+    ThemeMode.LIGHT -> false
+    ThemeMode.DARK -> true
 }
 
 @Immutable
@@ -113,11 +124,7 @@ fun TimeManagerTheme(
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    val useDarkTheme = when (themeMode) {
-        ThemeMode.SYSTEM -> isSystemInDarkTheme()
-        ThemeMode.LIGHT -> false
-        ThemeMode.DARK -> true
-    }
+    val useDarkTheme = themeMode.usesDarkColors()
     val colorScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
@@ -136,4 +143,20 @@ fun TimeManagerTheme(
             content = content,
         )
     }
+}
+
+/** Each window observes the same app preference for the lifetime of its own composition. */
+@Composable
+internal fun StoredTimeManagerTheme(
+    preferences: AppearancePreferences = rememberAppearancePreferences(),
+    content: @Composable (ThemeMode) -> Unit,
+) {
+    val mode by preferences.themeMode.collectAsStateWithLifecycle(initialValue = ThemeMode.SYSTEM)
+    TimeManagerTheme(themeMode = mode) { content(mode) }
+}
+
+@Composable
+private fun rememberAppearancePreferences(): AppearancePreferences {
+    val context = LocalContext.current.applicationContext
+    return remember(context) { AppearancePreferences(context) }
 }

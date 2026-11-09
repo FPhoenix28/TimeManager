@@ -7,14 +7,18 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -25,7 +29,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.dp
 import com.example.timemanager.R
+import com.example.timemanager.ui.theme.ThemeMode
 import com.example.timemanager.ui.theme.TimeManagerSpacing
 import com.example.timemanager.permissions.PermissionHealthState
 import com.example.timemanager.permissions.AccessibilityRuntimeState
@@ -35,6 +42,8 @@ typealias PermissionUiState = PermissionHealthState
 @Composable
 fun PermissionSettingsScreen(
     state: PermissionUiState,
+    themeMode: ThemeMode,
+    onThemeModeSelected: (ThemeMode) -> Unit,
     onBack: () -> Unit,
     onRequestUsageAccess: () -> Unit,
     onRequestNotification: () -> Unit,
@@ -61,19 +70,27 @@ fun PermissionSettingsScreen(
                     )
                 }
                 Text(
-                    text = "系统权限",
+                    text = "设置",
                     style = MaterialTheme.typography.titleLarge,
                 )
             }
         }
         item {
+            AppearanceSection(themeMode, onThemeModeSelected)
+        }
+        item {
+            Text(
+                text = "系统权限",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(top = TimeManagerSpacing.large),
+            )
             Text(
                 text = "查看各项功能是否已启用。返回应用后，授权状态会自动更新。",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(
-                    top = TimeManagerSpacing.medium,
-                    bottom = TimeManagerSpacing.large,
+                    top = TimeManagerSpacing.extraSmall,
+                    bottom = TimeManagerSpacing.medium,
                 ),
             )
         }
@@ -86,6 +103,46 @@ fun PermissionSettingsScreen(
                 onRequestAccessibility = onRequestAccessibility,
                 showAccessibility = true,
             )
+        }
+    }
+}
+
+@Composable
+private fun AppearanceSection(selectedMode: ThemeMode, onSelected: (ThemeMode) -> Unit) {
+    Text(
+        "外观",
+        style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier.padding(top = TimeManagerSpacing.medium, bottom = TimeManagerSpacing.small),
+    )
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    ) {
+        Column(Modifier.selectableGroup()) {
+            ThemeMode.entries.forEach { mode ->
+                val selected = mode == selectedMode
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .selectable(selected = selected, role = Role.RadioButton) {
+                            onSelected(mode)
+                        }
+                        .padding(horizontal = TimeManagerSpacing.medium, vertical = TimeManagerSpacing.small),
+                    horizontalArrangement = Arrangement.spacedBy(TimeManagerSpacing.compact),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(selected = selected, onClick = null)
+                    Text(
+                        when (mode) {
+                            ThemeMode.SYSTEM -> "跟随系统"
+                            ThemeMode.LIGHT -> "浅色模式"
+                            ThemeMode.DARK -> "深色模式"
+                        },
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                }
+            }
         }
     }
 }

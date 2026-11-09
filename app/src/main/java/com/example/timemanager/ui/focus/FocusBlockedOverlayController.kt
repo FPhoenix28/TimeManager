@@ -19,7 +19,7 @@ import androidx.compose.ui.unit.dp
 import com.example.timemanager.ui.intervention.OverlayComposeHostOwner
 import com.example.timemanager.ui.intervention.OverlayDialogSize
 import com.example.timemanager.ui.intervention.OverlayLayoutPolicy
-import com.example.timemanager.ui.theme.TimeManagerTheme
+import com.example.timemanager.ui.theme.StoredTimeManagerTheme
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -61,7 +61,7 @@ class FocusBlockedOverlayController(context: Context) {
             view = ComposeView(context).apply {
                 owner.installViewTreeOwners(this)
                 setContent {
-                    TimeManagerTheme {
+                    StoredTimeManagerTheme {
                         FocusBlockedContent(
                             appName, endTimeMillis, onReturn,
                             modifier = Modifier.heightIn(max = maxContentHeight),

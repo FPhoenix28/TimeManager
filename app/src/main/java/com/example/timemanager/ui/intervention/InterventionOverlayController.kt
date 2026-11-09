@@ -17,7 +17,7 @@ import com.example.timemanager.reminders.DelayedDeepFocusScheduler
 import com.example.timemanager.reminders.DelayedDeepFocusScheduleResult
 import com.example.timemanager.data.model.LimitInterventionRequest
 import com.example.timemanager.data.model.InterventionType
-import com.example.timemanager.ui.theme.TimeManagerTheme
+import com.example.timemanager.ui.theme.StoredTimeManagerTheme
 import com.example.timemanager.utils.OverlayPermissionManager
 import com.example.timemanager.config.BuildTimeConfig
 import com.example.timemanager.config.TimeConfigProvider
@@ -64,7 +64,7 @@ class InterventionOverlayController(
                 setOnKeyListener { _, keyCode, _ -> keyCode == KeyEvent.KEYCODE_BACK }
                 Log.d(TAG, "view tree owners installed")
                 setContent {
-                    TimeManagerTheme {
+                    StoredTimeManagerTheme {
                         val todoSummary by TodoRuntime.get(context).summaryProvider.summary.collectAsState()
                         val timingFlow = remember(timingProvider) { timingProvider.observe() }
                         val timing by timingFlow.collectAsState(timingProvider.current())

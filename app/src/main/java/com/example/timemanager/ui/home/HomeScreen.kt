@@ -348,7 +348,7 @@ private fun HomeTopBar(onOpenSettings: () -> Unit, showPermissionBadge: Boolean)
             }) {
                 Icon(
                     painter = painterResource(R.drawable.ic_settings),
-                    contentDescription = if (showPermissionBadge) "系统权限：有功能未启用" else "权限与系统设置",
+                    contentDescription = if (showPermissionBadge) "设置：有功能未启用" else "设置",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

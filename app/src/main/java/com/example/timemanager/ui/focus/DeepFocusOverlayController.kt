@@ -13,7 +13,7 @@ import androidx.compose.ui.platform.ComposeView
 import com.example.timemanager.data.model.FocusModeState
 import com.example.timemanager.domain.todo.TodoRuntime
 import com.example.timemanager.ui.intervention.OverlayComposeHostOwner
-import com.example.timemanager.ui.theme.TimeManagerTheme
+import com.example.timemanager.ui.theme.StoredTimeManagerTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -54,7 +54,7 @@ class DeepFocusOverlayController(context: Context) {
             view = ComposeView(context).apply {
                 owner.installViewTreeOwners(this)
                 setContent {
-                    TimeManagerTheme {
+                    StoredTimeManagerTheme {
                         DeepFocusTodoContent(
                             focus = focusState,
                             todoDayState = todoDayState,
