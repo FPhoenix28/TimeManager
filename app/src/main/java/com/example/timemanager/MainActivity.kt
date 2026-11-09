@@ -251,7 +251,9 @@ class MainActivity : ComponentActivity() {
         )[FocusViewModel::class.java]
         deepFocusViewModel = ViewModelProvider(
             this,
-            DeepFocusViewModel.Factory(focusModeRepository),
+            DeepFocusViewModel.Factory(focusModeRepository,
+                com.example.timemanager.reminders.DelayedDeepFocusScheduler.get(applicationContext),
+                TodoRuntime.get(applicationContext).repository),
         )[DeepFocusViewModel::class.java]
         todoViewModel = ViewModelProvider(this,
             TodoViewModel.Factory(TodoRuntime.get(applicationContext).repository))[TodoViewModel::class.java]

@@ -28,6 +28,9 @@ import com.example.timemanager.domain.todo.TodoSummary
 import com.example.timemanager.domain.todo.TodoSummaryItem
 import com.example.timemanager.ui.theme.ThemeMode
 import com.example.timemanager.ui.theme.TimeManagerTheme
+import com.example.timemanager.ui.focus.DelayedDeepFocusStatusCard
+import com.example.timemanager.reminders.DelayedDeepFocusStatus
+import kotlinx.coroutines.CompletableDeferred
 import java.io.File
 import java.time.Duration
 import org.junit.Assert.*
@@ -73,12 +76,13 @@ class SessionTodoUiTest {
         fontScale: Float = 1f,
         onHome: () -> Unit = {},
         onContinue: () -> Unit = {},
+        onSchedule: (suspend () -> Unit)? = null,
     ) {
         compose.setContent {
             TimeManagerTheme(themeMode = if (dark) ThemeMode.DARK else ThemeMode.LIGHT) {
                 CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale)) {
                     Surface { Box(Modifier.size(width.dp, height.dp)) {
-                        LimitReachedScreen(intervention, onHome, onContinue, todos)
+                        LimitReachedScreen(intervention, onHome, onContinue, todos, onSchedule)
                     } }
                 }
             }
@@ -89,7 +93,7 @@ class SessionTodoUiTest {
         val view = compose.activity.window.decorView
         val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
         view.draw(Canvas(bitmap))
-        val directory = File("build/reports/todo-session-phase2").apply { mkdirs() }
+        val directory = File("build/reports/todo-session-phase3").apply { mkdirs() }
         File(directory, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         bitmap.recycle()
     }
@@ -278,7 +282,8 @@ class SessionTodoUiTest {
             baseLimitSeconds = 3_600L, extensionSeconds = 0L, effectiveLimitSeconds = 3_600L,
             exceededSeconds = 0L, currentSessionSeconds = 600L, extensionDurationSeconds = 900L,
         )
-        show(summary(3), intervention = daily)
+        show(summary(3), intervention = daily, onSchedule = { fail("Daily must not schedule Deep Focus") })
+        compose.onNodeWithText("5 分钟后静心").assertDoesNotExist()
         compose.onNodeWithText("今日额度已用完").assertIsDisplayed()
         compose.onNodeWithText("不如先完成一件小事？").assertDoesNotExist()
         compose.onNodeWithText("○ 待办 1").performScrollTo().assertIsDisplayed()
@@ -288,5 +293,120 @@ class SessionTodoUiTest {
         compose.mainClock.advanceTimeBy(5_100L)
         compose.onNodeWithText("延长 15 分钟").assertIsEnabled()
         capture("daily-unchanged-light")
+    }
+
+    private fun assertThreeActions(enabled: Boolean = true, home: String = "返回桌面") {
+        listOf("5 分钟后静心", home, "继续使用").forEach { label ->
+            val node = compose.onNodeWithText(label).assertIsDisplayed()
+            if (enabled) node.assertIsEnabled() else node.assertIsNotEnabled()
+        }
+        compose.onAllNodes(hasClickAction()).assertCountEquals(3)
+    }
+
+    @Test fun delayedActionWaitsForGateAndConfirmationCanBeCancelled() {
+        compose.mainClock.autoAdvance = false
+        var schedules = 0
+        show(summary(3), intervention = request(waitMillis = 5_000L), onSchedule = { schedules++ })
+        compose.mainClock.advanceTimeByFrame()
+        assertThreeActions(enabled = false)
+        compose.onNodeWithText("5 分钟后静心").performClick()
+        compose.onNodeWithText("安排静心？").assertDoesNotExist()
+        ShadowSystemClock.advanceBy(Duration.ofSeconds(6))
+        compose.mainClock.advanceTimeBy(1_000L)
+        assertThreeActions()
+        // Deadline is now verified; let normal frame/layout idling drive the panel transitions.
+        compose.mainClock.autoAdvance = true
+        capture("three-actions-light")
+        compose.onNodeWithText("5 分钟后静心").performClick()
+        compose.onNodeWithText("安排静心？").assertIsDisplayed()
+        compose.onNodeWithText("将在约 5 分钟后自动开始 30 分钟静心模式。静心期间，除必要系统功能外，将暂时限制其他应用。").assertIsDisplayed()
+        compose.onNodeWithText("取消").performClick()
+        assertThreeActions()
+        compose.runOnIdle { assertEquals(0, schedules) }
+    }
+
+    @Test fun confirmationSchedulesOnceThenUsesOriginalContinueEvenWithoutTodos() {
+        var schedules = 0
+        var continues = 0
+        var homes = 0
+        val completion = CompletableDeferred<Unit>()
+        show(dark = true, onSchedule = { schedules++; completion.await() },
+            onContinue = { continues++ }, onHome = { homes++ })
+        assertThreeActions()
+        compose.onNodeWithText("5 分钟后静心").performClick()
+        capture("confirmation-dark")
+        compose.onNodeWithText("确认安排").performClick()
+        compose.onNodeWithText("正在安排…").assertIsNotEnabled().performClick()
+        compose.runOnIdle { assertEquals(1, schedules); assertEquals(0, continues); completion.complete(Unit) }
+        compose.onNodeWithText("先停一下").assertIsDisplayed()
+        compose.runOnIdle { assertEquals(1, continues); assertEquals(0, homes) }
+    }
+
+    @Test fun scheduleFailureKeepsOverlayAndExplainsReason() {
+        var continues = 0
+        show(summary(1), onSchedule = { error("悬浮窗权限已关闭") }, onContinue = { continues++ })
+        compose.onNodeWithText("5 分钟后静心").performClick()
+        compose.onNodeWithText("确认安排").performClick()
+        compose.onNodeWithText("悬浮窗权限已关闭").assertIsDisplayed()
+        compose.onNodeWithText("取消").assertIsEnabled()
+        compose.runOnIdle { assertEquals(0, continues) }
+    }
+
+    @Test fun reentrySchedulingUsesExistingContinueCallback() {
+        var continues = 0
+        show(intervention = request(phase = SessionGatePhase.REENTRY), onSchedule = {}, onContinue = { continues++ })
+        assertThreeActions(home = "留在桌面")
+        compose.onNodeWithText("5 分钟后静心").performClick()
+        compose.onNodeWithText("确认安排").performClick()
+        compose.runOnIdle { assertEquals(1, continues) }
+    }
+
+    @Test fun fallbackSchedulingUsesExistingContinueCallback() {
+        var continues = 0
+        show(intervention = request(presentation = InterventionPresentation.OVERLAY_IN_PLACE),
+            onSchedule = {}, onContinue = { continues++ })
+        assertThreeActions()
+        compose.onNodeWithText("5 分钟后静心").performClick()
+        compose.onNodeWithText("确认安排").performClick()
+        compose.runOnIdle { assertEquals(1, continues) }
+    }
+
+    @Test fun smallLargeFontReservesAllThreeActionsAndCountdown() {
+        show(summary(5, longTitles = true), intervention = request(waitMillis = 60_000L), onSchedule = {},
+            dark = true, width = 320, height = 480, fontScale = 2f)
+        compose.onNodeWithText("先停一下").assertIsDisplayed()
+        compose.onNodeWithText("60").assertIsDisplayed()
+        assertThreeActions(enabled = false)
+        capture("three-actions-small-dark")
+    }
+
+    @Test
+    @Config(qualifiers = "w800dp-h360dp-land-xhdpi")
+    fun landscapeLargeFontSupportsThreeActionsAndConfirmation() {
+        show(summary(3), onSchedule = {}, dark = true, width = 800, height = 360, fontScale = 2f)
+        assertThreeActions()
+        compose.onNodeWithText("5 分钟后静心").performClick()
+        compose.onNodeWithText("确认安排").assertIsDisplayed()
+        compose.onNodeWithText("取消").assertIsDisplayed()
+        capture("confirmation-landscape-dark")
+    }
+
+    @Test fun pendingStatusProvidesInAppCancelWithoutNotificationPermission() {
+        var cancelled = false
+        compose.setContent { TimeManagerTheme { DelayedDeepFocusStatusCard(
+            DelayedDeepFocusStatus("test-work", pending = true), onCancel = { cancelled = true }, onDismiss = {},
+        ) } }
+        compose.onNodeWithText("取消延迟静心").assertIsDisplayed().performClick()
+        compose.runOnIdle { assertTrue(cancelled) }
+    }
+
+    @Test fun failedAutomaticStartNoticeCanBeDismissed() {
+        var closed = false
+        compose.setContent { TimeManagerTheme { DelayedDeepFocusStatusCard(
+            DelayedDeepFocusStatus("test-work", notice = "静心未启动：权限不足"), onCancel = {}, onDismiss = { closed = true },
+        ) } }
+        compose.onNodeWithText("静心未启动：权限不足").assertIsDisplayed()
+        compose.onNodeWithText("关闭").performClick()
+        compose.runOnIdle { assertTrue(closed) }
     }
 }

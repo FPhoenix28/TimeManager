@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
 import com.example.timemanager.data.model.FocusModeState
+import com.example.timemanager.domain.todo.TodoRuntime
 import com.example.timemanager.ui.intervention.OverlayComposeHostOwner
 import com.example.timemanager.ui.theme.TimeManagerTheme
 import kotlinx.coroutines.Dispatchers
@@ -19,6 +20,7 @@ import kotlinx.coroutines.withContext
 class DeepFocusOverlayController(context: Context) {
     private val context = context.applicationContext
     private val windowManager = context.getSystemService(WindowManager::class.java)
+    private val todoDayState by lazy { TodoRuntime.get(this.context).repository.dayState }
     private var overlayView: ComposeView? = null
     private var hostOwner: OverlayComposeHostOwner? = null
     private var focusState by mutableStateOf(FocusModeState())
@@ -53,8 +55,9 @@ class DeepFocusOverlayController(context: Context) {
                 owner.installViewTreeOwners(this)
                 setContent {
                     TimeManagerTheme {
-                        DeepFocusContent(
+                        DeepFocusTodoContent(
                             focus = focusState,
+                            todoDayState = todoDayState,
                             accessibilityEnabled = this@DeepFocusOverlayController.accessibilityEnabled,
                             overlayEnabled = true,
                             onEndConfirmed = { this@DeepFocusOverlayController.onEndConfirmed() },

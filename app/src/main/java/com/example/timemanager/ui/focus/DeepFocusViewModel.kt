@@ -5,12 +5,19 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.timemanager.data.model.FocusModeState
 import com.example.timemanager.data.repository.FocusModeRepository
+import com.example.timemanager.data.repository.TodoRepository
+import com.example.timemanager.reminders.DelayedDeepFocusScheduler
+import com.example.timemanager.reminders.DelayedDeepFocusStatus
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 data class DeepFocusUiState(
@@ -25,9 +32,15 @@ data class DeepFocusUiState(
 
 class DeepFocusViewModel(
     private val focusRepository: FocusModeRepository,
+    private val delayedScheduler: DelayedDeepFocusScheduler,
+    todoRepository: TodoRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(DeepFocusUiState())
     val uiState: StateFlow<DeepFocusUiState> = _uiState.asStateFlow()
+    val todoDayState = todoRepository.dayState
+    val delayedStart = delayedScheduler.observe()
+        .catch { emit(DelayedDeepFocusStatus(notice = "无法读取延迟静心安排，请稍后重试。")) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DelayedDeepFocusStatus())
     private var expiryJob: Job? = null
 
     init {
@@ -83,13 +96,26 @@ class DeepFocusViewModel(
         }
     }
 
+    fun cancelDelayedStart() {
+        val workId = delayedStart.value.workId.takeIf { it.isNotBlank() } ?: return
+        viewModelScope.launch {
+            try {
+                val message = delayedScheduler.cancelPending(workId)
+                _uiState.update { it.copy(error = message) }
+            } catch (error: CancellationException) { throw error }
+            catch (error: Exception) { _uiState.update { it.copy(error = "未能取消安排，请重试。") } }
+        }
+    }
+
     class Factory(
         private val focusRepository: FocusModeRepository,
+        private val delayedScheduler: DelayedDeepFocusScheduler,
+        private val todoRepository: TodoRepository,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             if (modelClass.isAssignableFrom(DeepFocusViewModel::class.java)) {
-                return DeepFocusViewModel(focusRepository) as T
+                return DeepFocusViewModel(focusRepository, delayedScheduler, todoRepository) as T
             }
             throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
         }

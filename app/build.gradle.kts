@@ -101,6 +101,7 @@ dependencies {
     testImplementation(libs.junit)
     "testDebugImplementation"(libs.robolectric)
     "testDebugImplementation"(libs.androidx.compose.ui.test.junit4)
+    "testDebugImplementation"(libs.androidx.work.testing)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)

@@ -7,10 +7,12 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -21,6 +23,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -41,6 +44,8 @@ fun DeepFocusSetupScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val delayedStart by viewModel.delayedStart.collectAsStateWithLifecycle()
+    var dismissedNotice by rememberSaveable { mutableStateOf<String?>(null) }
     var showStartConfirmation by remember { mutableStateOf(false) }
     var showPermissionExplanation by remember { mutableStateOf(false) }
     BackHandler(onBack = onBack)
@@ -59,6 +64,12 @@ fun DeepFocusSetupScreen(
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+        if (delayedStart.pending || delayedStart.notice != null && dismissedNotice != delayedStart.workId) {
+            item("delayedStart") {
+                DelayedDeepFocusStatusCard(delayedStart, viewModel::cancelDelayedStart,
+                    onDismiss = { dismissedNotice = delayedStart.workId })
             }
         }
         item("duration") {
@@ -160,5 +171,22 @@ fun DeepFocusSetupScreen(
             },
             dismissButton = { TextButton(onClick = { showPermissionExplanation = false }) { Text("取消") } },
         )
+    }
+}
+
+@Composable
+internal fun DelayedDeepFocusStatusCard(
+    status: com.example.timemanager.reminders.DelayedDeepFocusStatus,
+    onCancel: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(TimeManagerSpacing.medium), verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.small)) {
+            Text(if (status.pending) "已安排延迟静心" else "延迟静心未启动", style = MaterialTheme.typography.titleMedium)
+            Text(if (status.pending) "准备期后将自动静心 30 分钟；后台调度可能稍有延迟。" else status.notice.orEmpty(),
+                style = MaterialTheme.typography.bodyMedium)
+            if (status.pending) TextButton(onClick = onCancel) { Text("取消延迟静心") }
+            else TextButton(onClick = onDismiss) { Text("关闭") }
+        }
     }
 }

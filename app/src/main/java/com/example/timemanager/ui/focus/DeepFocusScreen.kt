@@ -7,7 +7,10 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -30,20 +33,25 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.timemanager.data.model.FocusModeState
 import com.example.timemanager.data.model.FocusModeType
+import com.example.timemanager.data.local.TodoEntity
+import com.example.timemanager.domain.todo.TodoDayState
 import com.example.timemanager.ui.intervention.ResponsiveInterventionScaffold
 import com.example.timemanager.ui.theme.TimeManagerSpacing
 import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.StateFlow
 
 @Composable
 fun DeepFocusActiveScreen(
@@ -57,8 +65,9 @@ fun DeepFocusActiveScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     BackHandler(enabled = state.focus.mode == FocusModeType.DEEP_FOCUS) { }
-    DeepFocusContent(
+    DeepFocusTodoContent(
         focus = state.focus,
+        todoDayState = viewModel.todoDayState,
         accessibilityEnabled = accessibilityEnabled,
         overlayEnabled = overlayEnabled,
         onEndConfirmed = { viewModel.endDeepFocus(onEnded) },
@@ -67,6 +76,25 @@ fun DeepFocusActiveScreen(
         onRequestOverlay = onRequestOverlay,
         modifier = modifier,
     )
+}
+
+/** Shared Activity/overlay binding to the cached, complete day-state flow. */
+@Composable
+internal fun DeepFocusTodoContent(
+    focus: FocusModeState,
+    todoDayState: StateFlow<TodoDayState>,
+    accessibilityEnabled: Boolean,
+    overlayEnabled: Boolean,
+    onEndConfirmed: () -> Unit,
+    onCompleted: () -> Unit,
+    onRequestAccessibility: (() -> Unit)? = null,
+    onRequestOverlay: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
+    val dayState by todoDayState.collectAsStateWithLifecycle()
+    val unfinished = remember(dayState) { dayState.unfinished }
+    DeepFocusContent(focus, accessibilityEnabled, overlayEnabled, onEndConfirmed, onCompleted,
+        onRequestAccessibility, onRequestOverlay, modifier, unfinished)
 }
 
 @Composable
@@ -79,6 +107,7 @@ fun DeepFocusContent(
     onRequestAccessibility: (() -> Unit)? = null,
     onRequestOverlay: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    unfinishedTodos: List<TodoEntity> = emptyList(),
 ) {
     var showEndConfirmation by remember { mutableStateOf(false) }
     val completed = focus.isDeepFocusCompleted()
@@ -87,78 +116,62 @@ fun DeepFocusContent(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.surfaceContainerLowest,
         ) {
-            Column(
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxSize()
                     .safeDrawingPadding()
-                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = TimeManagerSpacing.extraLarge, vertical = TimeManagerSpacing.large),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text(
-                    if (completed) "静心结束" else "静心",
-                    style = MaterialTheme.typography.headlineMedium,
-                )
-                Spacer(Modifier.height(TimeManagerSpacing.extraLarge))
-                if (completed) {
-                    Text(
-                        formatDeepFocusDuration(focus.endTimeMillis - focus.startTimeMillis),
-                        style = MaterialTheme.typography.displayLarge,
-                    )
-                    Spacer(Modifier.height(TimeManagerSpacing.large))
-                    Text("这段时间结束了", style = MaterialTheme.typography.titleMedium)
-                    Spacer(Modifier.height(TimeManagerSpacing.extraLarge))
-                    Button(onClick = onCompleted, modifier = Modifier.fillMaxWidth()) {
-                        Text("完成")
+                if (focus.isDeepFocusActive()) {
+                    val wide = maxWidth >= 600.dp && maxWidth > maxHeight
+                    val maxListHeight = (maxHeight * if (wide) 0.45f else 0.28f).coerceAtMost(260.dp)
+                    val compactHeight = maxHeight < 500.dp
+                    val information: @Composable ColumnScope.() -> Unit = {
+                        DeepFocusInformation(focus, unfinishedTodos, maxListHeight, compactHeight,
+                            accessibilityEnabled, overlayEnabled, onRequestAccessibility, onRequestOverlay)
                     }
-                } else if (focus.isDeepFocusActive()) {
-                    FocusCountdown(focus.endTimeMillis, MaterialTheme.typography.displayLarge)
-                    Spacer(Modifier.height(TimeManagerSpacing.large))
-                    Text(
-                        "现在不需要做任何事",
-                        style = MaterialTheme.typography.titleMedium,
-                        textAlign = TextAlign.Center,
-                    )
-                    Spacer(Modifier.height(TimeManagerSpacing.extraLarge))
-                    Text(
-                        "本次静心  ${formatDeepFocusDuration(focus.endTimeMillis - focus.startTimeMillis)}",
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                    Text(
-                        "结束时间  ${DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(focus.endTimeMillis))}",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    if (!accessibilityEnabled) {
-                        Spacer(Modifier.height(TimeManagerSpacing.large))
-                        Text(
-                            "无障碍服务已关闭，当前无法阻止其它应用。",
-                            color = MaterialTheme.colorScheme.error,
-                            textAlign = TextAlign.Center,
-                        )
-                        onRequestAccessibility?.let { callback ->
-                            TextButton(onClick = callback) { Text("重新开启") }
+                    if (wide) {
+                        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(TimeManagerSpacing.extraLarge)) {
+                            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),
+                                horizontalAlignment = Alignment.CenterHorizontally, content = information)
+                            HoldToEndButton(onCompleted = { showEndConfirmation = true })
+                        }
+                    } else {
+                        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center,
+                            horizontalAlignment = Alignment.CenterHorizontally) {
+                            Column(Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()),
+                                horizontalAlignment = Alignment.CenterHorizontally, content = information)
+                            Spacer(Modifier.height(TimeManagerSpacing.extraLarge))
+                            HoldToEndButton(onCompleted = { showEndConfirmation = true })
                         }
                     }
-                    if (!overlayEnabled) {
-                        Spacer(Modifier.height(TimeManagerSpacing.small))
-                        Text(
-                            "悬浮窗权限已关闭，当前无法阻止其它应用；静心界面仍可在 TimeManager 内查看。",
-                            color = MaterialTheme.colorScheme.error,
-                            textAlign = TextAlign.Center,
-                        )
-                        onRequestOverlay?.let { callback ->
-                            TextButton(onClick = callback) { Text("恢复悬浮窗权限") }
-                        }
-                    }
-                    Spacer(Modifier.height(TimeManagerSpacing.extraLarge))
-                    HoldToEndButton(onCompleted = { showEndConfirmation = true })
                 } else {
-                    Text("静心状态已解除", style = MaterialTheme.typography.titleMedium)
-                    Spacer(Modifier.height(TimeManagerSpacing.large))
-                    Button(onClick = onCompleted, modifier = Modifier.fillMaxWidth()) {
-                        Text("返回首页")
+                    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            if (completed) "静心结束" else "静心",
+                            style = MaterialTheme.typography.headlineMedium,
+                        )
+                        Spacer(Modifier.height(TimeManagerSpacing.extraLarge))
+                        if (completed) {
+                            Text(
+                                formatDeepFocusDuration(focus.endTimeMillis - focus.startTimeMillis),
+                                style = MaterialTheme.typography.displayLarge,
+                            )
+                            Spacer(Modifier.height(TimeManagerSpacing.large))
+                            Text("这段时间结束了", style = MaterialTheme.typography.titleMedium)
+                            Spacer(Modifier.height(TimeManagerSpacing.extraLarge))
+                            Button(onClick = onCompleted, modifier = Modifier.fillMaxWidth()) {
+                                Text("完成")
+                            }
+                        } else {
+                            Text("静心状态已解除", style = MaterialTheme.typography.titleMedium)
+                            Spacer(Modifier.height(TimeManagerSpacing.large))
+                            Button(onClick = onCompleted, modifier = Modifier.fillMaxWidth()) {
+                                Text("返回首页")
+                            }
+                        }
                     }
                 }
             }
@@ -197,12 +210,54 @@ fun DeepFocusContent(
 }
 
 @Composable
+private fun ColumnScope.DeepFocusInformation(
+    focus: FocusModeState,
+    todos: List<TodoEntity>,
+    maxListHeight: Dp,
+    compactHeight: Boolean,
+    accessibilityEnabled: Boolean,
+    overlayEnabled: Boolean,
+    onRequestAccessibility: (() -> Unit)?,
+    onRequestOverlay: (() -> Unit)?,
+) {
+    Text("静心模式", style = MaterialTheme.typography.headlineMedium)
+    Spacer(Modifier.height(TimeManagerSpacing.extraLarge))
+    FocusCountdown(focus.endTimeMillis,
+        if (compactHeight) MaterialTheme.typography.displaySmall else MaterialTheme.typography.displayLarge)
+    Spacer(Modifier.height(TimeManagerSpacing.large))
+    Text(if (todos.isEmpty()) "现在不需要做任何事" else "暂时放下手机，专注眼前的事情",
+        style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+    if (todos.isNotEmpty()) {
+        Spacer(Modifier.height(TimeManagerSpacing.medium))
+        DeepFocusTodoCard(todos, maxListHeight)
+    }
+    Spacer(Modifier.height(TimeManagerSpacing.extraLarge))
+    Text("本次静心  ${formatDeepFocusDuration(focus.endTimeMillis - focus.startTimeMillis)}",
+        style = MaterialTheme.typography.bodyLarge)
+    Text("结束时间  ${DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(focus.endTimeMillis))}",
+        style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    if (!accessibilityEnabled) {
+        Spacer(Modifier.height(TimeManagerSpacing.large))
+        Text("无障碍服务已关闭，当前无法阻止其它应用。", color = MaterialTheme.colorScheme.error,
+            textAlign = TextAlign.Center)
+        onRequestAccessibility?.let { callback -> TextButton(onClick = callback) { Text("重新开启") } }
+    }
+    if (!overlayEnabled) {
+        Spacer(Modifier.height(TimeManagerSpacing.small))
+        Text("悬浮窗权限已关闭，当前无法阻止其它应用；静心界面仍可在 TimeManager 内查看。",
+            color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
+        onRequestOverlay?.let { callback -> TextButton(onClick = callback) { Text("恢复悬浮窗权限") } }
+    }
+}
+
+@Composable
 private fun HoldToEndButton(onCompleted: () -> Unit) {
     val progress = remember { Animatable(0f) }
     val latestOnCompleted by rememberUpdatedState(onCompleted)
+    val controlSize = 132.dp * LocalDensity.current.fontScale.coerceIn(1f, 1.5f)
     Box(
         modifier = Modifier
-            .size(132.dp)
+            .size(controlSize)
             .pointerInput(Unit) {
                 detectTapGestures(
                     onPress = {
@@ -235,7 +290,7 @@ private fun HoldToEndButton(onCompleted: () -> Unit) {
             trackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         )
         Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerLow) {
-            Box(modifier = Modifier.size(112.dp), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.size(controlSize - 20.dp), contentAlignment = Alignment.Center) {
                 Text("长按 3 秒\n提前结束", textAlign = TextAlign.Center)
             }
         }

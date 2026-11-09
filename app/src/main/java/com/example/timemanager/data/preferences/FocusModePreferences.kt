@@ -17,6 +17,7 @@ import java.io.IOException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
 
 private val Context.focusModeDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "focus_mode",
@@ -42,6 +43,22 @@ class FocusModePreferences(context: Context) {
             preferences.writeState(transform(preferences.toFocusModeState()))
         }
     }
+
+    /** Receipt and mode commit together; stopping a mode does not erase the receipt. */
+    suspend fun updateStateOnce(requestId: String, transform: (FocusModeState) -> FocusModeState): Boolean {
+        var applied = false
+        dataStore.edit { preferences ->
+            if (preferences[LAST_DELAYED_REQUEST] != requestId) {
+                preferences.writeState(transform(preferences.toFocusModeState()))
+                preferences[LAST_DELAYED_REQUEST] = requestId
+                applied = true
+            }
+        }
+        return applied
+    }
+
+    suspend fun wasDelayedRequestApplied(requestId: String): Boolean =
+        dataStore.data.first()[LAST_DELAYED_REQUEST] == requestId
 
     private fun Preferences.toFocusModeState(): FocusModeState {
         val mode = FocusModeType.entries.firstOrNull { it.name == this[MODE] }
@@ -73,5 +90,6 @@ class FocusModePreferences(context: Context) {
         val START = longPreferencesKey("start_time_millis")
         val END = longPreferencesKey("end_time_millis")
         val BLOCKED = stringSetPreferencesKey("blocked_packages")
+        val LAST_DELAYED_REQUEST = stringPreferencesKey("last_delayed_deep_focus_request")
     }
 }

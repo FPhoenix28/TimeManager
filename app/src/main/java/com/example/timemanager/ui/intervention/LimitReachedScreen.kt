@@ -42,6 +42,7 @@ fun LimitReachedScreen(
     onExit: () -> Unit,
     onContinue: () -> Unit,
     todoSummary: TodoSummary = TodoSummary(),
+    onScheduleDeepFocus: (suspend () -> Unit)? = null,
 ) {
     when (request.type) {
         InterventionType.DAILY_LIMIT_REACHED -> DailyLimitReachedContent(
@@ -56,6 +57,7 @@ fun LimitReachedScreen(
             todoSummary = todoSummary,
             onStayHome = onExit,
             onContinue = onContinue,
+            onScheduleDeepFocus = onScheduleDeepFocus,
         )
     }
 }

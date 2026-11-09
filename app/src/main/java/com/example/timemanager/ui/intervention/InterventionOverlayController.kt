@@ -7,11 +7,14 @@ import android.view.KeyEvent
 import android.view.Gravity
 import android.view.WindowManager
 import android.util.Log
+import android.widget.Toast
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import com.example.timemanager.domain.todo.TodoRuntime
+import com.example.timemanager.reminders.DelayedDeepFocusScheduler
+import com.example.timemanager.reminders.DelayedDeepFocusScheduleResult
 import com.example.timemanager.data.model.LimitInterventionRequest
 import com.example.timemanager.data.model.InterventionType
 import com.example.timemanager.ui.theme.TimeManagerTheme
@@ -75,6 +78,14 @@ class InterventionOverlayController(
                                 else onContinue()
                             },
                             todoSummary = todoSummary,
+                            onScheduleDeepFocus = {
+                                val result = DelayedDeepFocusScheduler.get(context).schedule()
+                                withContext(Dispatchers.Main.immediate) {
+                                    Toast.makeText(context,
+                                        if (result == DelayedDeepFocusScheduleResult.ALREADY_PENDING) "已有静心安排，仍按原定时间开始，未重新计时。"
+                                        else "已安排约 5 分钟后静心，可在静心模式中取消。", Toast.LENGTH_LONG).show()
+                                }
+                            },
                         )
                     }
                 }

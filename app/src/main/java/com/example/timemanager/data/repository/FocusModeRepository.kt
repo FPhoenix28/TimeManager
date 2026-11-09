@@ -42,9 +42,10 @@ class FocusModeRepository(
         durationMinutes: Int,
         replaceActiveFocus: Boolean,
         nowMillis: Long = System.currentTimeMillis(),
-    ) {
+        delayedRequestId: String? = null,
+    ): Boolean {
         require(durationMinutes in 1..720) { "Deep Focus duration must be 1–720 minutes." }
-        preferences.updateState { current ->
+        val transform: (FocusModeState) -> FocusModeState = { current ->
             require(current.mode != FocusModeType.DEEP_FOCUS) {
                 "A Deep Focus session is already present."
             }
@@ -60,7 +61,11 @@ class FocusModeRepository(
                 endTimeMillis = nowMillis + durationMinutes * 60_000L,
             )
         }
+        return if (delayedRequestId != null) preferences.updateStateOnce(delayedRequestId, transform)
+        else { preferences.updateState(transform); true }
     }
+
+    suspend fun wasDelayedDeepFocusStarted(requestId: String): Boolean = preferences.wasDelayedRequestApplied(requestId)
 
     suspend fun stopFocus() = preferences.save(FocusModeState())
 
