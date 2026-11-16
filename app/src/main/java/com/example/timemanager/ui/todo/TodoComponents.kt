@@ -17,10 +17,12 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.timemanager.R
 import com.example.timemanager.data.local.TodoEntity
 import com.example.timemanager.domain.todo.TODO_TITLE_MAX_LENGTH
 import com.example.timemanager.ui.components.CalmPanel
 import com.example.timemanager.ui.components.CalmPanelTone
+import com.example.timemanager.ui.components.FeatureArtwork
 import com.example.timemanager.ui.theme.TimeManagerSpacing
 
 @Composable
@@ -96,7 +98,7 @@ fun TodoHomeSection(viewModel: TodoViewModel, onOpenAll: () -> Unit) {
         contentPadding = PaddingValues(horizontal = TimeManagerSpacing.medium, vertical = TimeManagerSpacing.small),
     ) {
         Column(Modifier.fillMaxWidth()) {
-            TodoHomeHeader(unfinished.size, onOpenAll)
+            TodoHomeHeader(onOpenAll)
             if (unfinished.isEmpty()) {
                 Text(
                     text = if (state.usageDay.isBlank()) "正在读取待办…" else "写下一件想完成的事",
@@ -126,18 +128,18 @@ fun TodoHomeSection(viewModel: TodoViewModel, onOpenAll: () -> Unit) {
 }
 
 @Composable
-private fun TodoHomeHeader(unfinishedCount: Int, onOpenAll: () -> Unit) {
+private fun TodoHomeHeader(onOpenAll: () -> Unit) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         if (maxWidth < 240.dp || LocalDensity.current.fontScale > 1.3f) {
             Column(Modifier.fillMaxWidth()) {
-                TodoHomeTitle(unfinishedCount)
+                TodoHomeTitle()
                 TextButton(onClick = onOpenAll, modifier = Modifier.align(Alignment.End)) {
                     Text("查看全部", maxLines = 1)
                 }
             }
         } else {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) { TodoHomeTitle(unfinishedCount) }
+                TodoHomeTitle(Modifier.weight(1f))
                 TextButton(onClick = onOpenAll) { Text("查看全部", maxLines = 1) }
             }
         }
@@ -145,13 +147,15 @@ private fun TodoHomeHeader(unfinishedCount: Int, onOpenAll: () -> Unit) {
 }
 
 @Composable
-private fun TodoHomeTitle(unfinishedCount: Int) {
-    Text("今日待办", style = MaterialTheme.typography.titleLarge)
-    Text(
-        text = "$unfinishedCount 项未完成",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
+private fun TodoHomeTitle(modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(TimeManagerSpacing.extraSmall),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        FeatureArtwork(R.drawable.ic_tm_todo, Modifier.size(36.dp))
+        Text("今日待办", style = MaterialTheme.typography.titleLarge)
+    }
 }
 
 @Composable

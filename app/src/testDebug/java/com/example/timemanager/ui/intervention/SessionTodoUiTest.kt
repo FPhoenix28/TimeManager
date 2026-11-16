@@ -93,7 +93,7 @@ class SessionTodoUiTest {
         val view = compose.activity.window.decorView
         val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
         view.draw(Canvas(bitmap))
-        val directory = File("build/reports/ui-polish/session").apply { mkdirs() }
+        val directory = File("build/reports/todo-session-final-polish/session").apply { mkdirs() }
         File(directory, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         bitmap.recycle()
     }
@@ -330,6 +330,12 @@ class SessionTodoUiTest {
         assertThreeActions()
         // Deadline is now verified; let normal frame/layout idling drive the panel transitions.
         compose.mainClock.autoAdvance = true
+        val schedule = compose.onNodeWithText("5 分钟后静心").fetchSemanticsNode().boundsInRoot
+        val home = compose.onNodeWithText("返回桌面").fetchSemanticsNode().boundsInRoot
+        val continueApp = compose.onNodeWithText("继续使用").fetchSemanticsNode().boundsInRoot
+        assertTrue(schedule.bottom <= home.top && home.top == continueApp.top)
+        assertTrue(home.right < continueApp.left)
+        assertEquals(home.width, continueApp.width, 1f)
         capture("three-actions-light")
         compose.onNodeWithText("5 分钟后静心").performClick()
         assertConfirmationContent()
@@ -347,6 +353,7 @@ class SessionTodoUiTest {
         show(dark = true, onSchedule = { schedules++; completion.await() },
             onContinue = { continues++ }, onHome = { homes++ })
         assertThreeActions()
+        capture("three-actions-dark")
         compose.onNodeWithText("5 分钟后静心").performClick()
         assertConfirmationContent()
         capture("confirmation-v2-dark")
@@ -392,7 +399,18 @@ class SessionTodoUiTest {
         compose.onNodeWithText("先停一下").assertIsDisplayed()
         compose.onNodeWithText("60").assertIsDisplayed()
         assertThreeActions(enabled = false)
+        val home = compose.onNodeWithText("返回桌面").fetchSemanticsNode().boundsInRoot
+        val continueApp = compose.onNodeWithText("继续使用").fetchSemanticsNode().boundsInRoot
+        assertTrue(home.bottom <= continueApp.top)
         capture("three-actions-small-dark")
+    }
+
+    @Test fun narrowActionAreaStacksButtonsAtDefaultFontSize() {
+        show(width = 280, onSchedule = {})
+        assertThreeActions()
+        val home = compose.onNodeWithText("返回桌面").fetchSemanticsNode().boundsInRoot
+        val continueApp = compose.onNodeWithText("继续使用").fetchSemanticsNode().boundsInRoot
+        assertTrue(home.bottom <= continueApp.top)
     }
 
     @Test
@@ -411,6 +429,7 @@ class SessionTodoUiTest {
     fun landscapeLargeFontSupportsThreeActionsAndConfirmation() {
         show(summary(3), onSchedule = {}, dark = true, width = 800, height = 360, fontScale = 2f)
         assertThreeActions()
+        capture("three-actions-landscape-dark")
         compose.onNodeWithText("5 分钟后静心").performClick()
         assertConfirmationContent()
         capture("confirmation-v2-landscape-dark")

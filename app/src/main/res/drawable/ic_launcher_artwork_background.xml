@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Full approved artwork, not extracted foreground layers.
+     Insets compensate for AdaptiveIconDrawable's 108dp to 72dp viewport expansion. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#191725" />
+        </shape>
+    </item>
+    <item>
+        <inset
+            android:insetLeft="16.666667%"
+            android:insetTop="16.666667%"
+            android:insetRight="16.666667%"
+            android:insetBottom="16.666667%">
+            <bitmap
+                android:src="@drawable/ic_launcher_artwork"
+                android:gravity="fill"
+                android:filter="true" />
+        </inset>
+    </item>
+</layer-list>

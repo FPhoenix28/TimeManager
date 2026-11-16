@@ -3,6 +3,7 @@ package com.example.timemanager.ui.theme
 import android.app.Application
 import android.content.res.Configuration
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.os.SystemClock
 import android.widget.FrameLayout
@@ -26,6 +27,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import com.example.timemanager.R
 import com.example.timemanager.data.model.FocusModeState
 import com.example.timemanager.data.model.FocusModeType
 import com.example.timemanager.data.model.LimitInterventionRequest
@@ -47,6 +49,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -80,9 +83,25 @@ class ThemeSwitchUiTest {
         val view = compose.activity.window.decorView
         val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
         view.draw(Canvas(bitmap))
-        val directory = File("build/reports/theme-switch-phase5").apply { mkdirs() }
+        val directory = File("build/reports/icon-system-v1").apply { mkdirs() }
         File(directory, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         bitmap.recycle()
+    }
+
+    @Test fun featureArtworkDecodesAtOriginalSizeWithTransparentCorners() {
+        val resources = compose.activity.resources
+        listOf(R.drawable.ic_tm_focus, R.drawable.ic_tm_deep_focus, R.drawable.ic_tm_todo,
+            R.drawable.ic_tm_usage, R.drawable.ic_tm_session).forEach { resource ->
+            val bitmap = checkNotNull(BitmapFactory.decodeResource(resources, resource))
+            try {
+                assertEquals(1024, bitmap.width)
+                assertEquals(1024, bitmap.height)
+                assertTrue(bitmap.hasAlpha())
+                assertEquals(0, android.graphics.Color.alpha(bitmap.getPixel(0, 0)))
+            } finally {
+                bitmap.recycle()
+            }
+        }
     }
 
     @Test fun settingsSwitchImmediatelyAndSystemResumesFollowingDeviceAppearance() {
@@ -196,6 +215,12 @@ class ThemeSwitchUiTest {
         expectPalette(dark = true)
         compose.onNodeWithText("今日待办").assertIsDisplayed()
         capture("home-dark")
+        setMode(ThemeMode.SYSTEM)
+        dispatchNightMode(dark = false)
+        expectPalette(dark = false)
+        dispatchNightMode(dark = true)
+        expectPalette(dark = true)
+        capture("home-system-dark")
     }
 
     @Test fun sessionGateKeepsWaitingWhenTheOverlayRecolors() {

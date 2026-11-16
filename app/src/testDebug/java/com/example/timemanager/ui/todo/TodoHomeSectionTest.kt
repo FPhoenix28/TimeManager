@@ -104,7 +104,7 @@ class TodoHomeSectionTest {
             val view = compose.activity.window.decorView
             val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
             view.draw(Canvas(bitmap))
-            val directory = File("build/reports/ui-polish/home").apply { mkdirs() }
+            val directory = File("build/reports/todo-session-final-polish/home").apply { mkdirs() }
             File(directory, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
             bitmap.recycle()
         }
@@ -113,7 +113,7 @@ class TodoHomeSectionTest {
     @Test fun emptyCardKeepsQuickAddAndViewAll() {
         var opened = false
         showCard(onOpenAll = { opened = true })
-        compose.onNodeWithText("0 项未完成").assertIsDisplayed()
+        compose.onNodeWithText("0 项未完成").assertDoesNotExist()
         compose.onNodeWithText("写下一件想完成的事").assertIsDisplayed()
         compose.onNodeWithText("＋ 添加待办").assertIsDisplayed()
         capture("empty-light")
@@ -124,7 +124,7 @@ class TodoHomeSectionTest {
     @Test fun oneTaskShowsTitleAndCheckbox() {
         seed(1)
         showCard()
-        compose.onNodeWithText("1 项未完成").assertIsDisplayed()
+        compose.onNodeWithText("1 项未完成").assertDoesNotExist()
         compose.onNodeWithText("待办 1").assertIsDisplayed()
         compose.onNodeWithContentDescription("完成状态：待办 1").assertIsOff()
         compose.onAllNodes(hasText("还有", substring = true)).assertCountEquals(0)
@@ -134,7 +134,7 @@ class TodoHomeSectionTest {
     @Test fun threeTasksKeepRepositoryOrderWithoutOverflow() {
         seed(3)
         showCard()
-        compose.onNodeWithText("3 项未完成").assertIsDisplayed()
+        compose.onNodeWithText("3 项未完成").assertDoesNotExist()
         val bounds = (1..3).map { compose.onNodeWithText("待办 $it").assertIsDisplayed().fetchSemanticsNode().boundsInRoot }
         assertTrue(bounds.zipWithNext().all { (first, next) -> first.bottom <= next.top })
         compose.onAllNodes(hasText("还有", substring = true)).assertCountEquals(0)
@@ -144,7 +144,7 @@ class TodoHomeSectionTest {
     @Test fun fiveTasksShowOnlyThreeAndTwoMore() {
         seed(5)
         showCard(dark = true)
-        compose.onNodeWithText("5 项未完成").assertIsDisplayed()
+        compose.onNodeWithText("5 项未完成").assertDoesNotExist()
         (1..3).forEach { compose.onNodeWithText("待办 $it").assertIsDisplayed() }
         compose.onNodeWithText("待办 4").assertDoesNotExist()
         compose.onNodeWithText("待办 5").assertDoesNotExist()
@@ -152,11 +152,11 @@ class TodoHomeSectionTest {
         capture("five-dark")
     }
 
-    @Test fun completingPreviewTaskUpdatesCountAndPromotesNextInOrder() {
+    @Test fun completingPreviewTaskUpdatesOverflowAndPromotesNextInOrder() {
         seed(5)
         showCard()
         compose.onNodeWithContentDescription("完成状态：待办 1").performClick()
-        compose.onNodeWithText("4 项未完成").assertIsDisplayed()
+        compose.onNodeWithText("4 项未完成").assertDoesNotExist()
         compose.onNodeWithText("待办 1").assertDoesNotExist()
         compose.onNodeWithText("待办 4").assertIsDisplayed()
         compose.onNodeWithText("还有 1 项").assertIsDisplayed()
@@ -167,7 +167,7 @@ class TodoHomeSectionTest {
         seed(1)
         showCard()
         compose.onNodeWithContentDescription("完成状态：待办 1").performClick()
-        compose.onNodeWithText("0 项未完成").assertIsDisplayed()
+        compose.onNodeWithText("0 项未完成").assertDoesNotExist()
         compose.onNodeWithText("写下一件想完成的事").assertIsDisplayed()
         compose.onNodeWithText("＋ 添加待办").assertIsDisplayed()
     }
@@ -177,7 +177,7 @@ class TodoHomeSectionTest {
         compose.onNodeWithText("＋ 添加待办").performClick()
         compose.onNode(hasSetTextAction()).performTextInput("读一章书")
         compose.onNodeWithText("添加", useUnmergedTree = true).performClick()
-        compose.onNodeWithText("1 项未完成").assertIsDisplayed()
+        compose.onNodeWithText("1 项未完成").assertDoesNotExist()
         compose.onNodeWithText("读一章书", useUnmergedTree = true).assertIsDisplayed()
         compose.runOnIdle { assertEquals("读一章书", dao.rows.value.single().title) }
     }
@@ -216,9 +216,10 @@ class TodoHomeSectionTest {
         runBlocking { repeat(3) { repository.create("很长的待办标题需要合理截断而且不能遮挡复选框和查看全部等操作".repeat(3) + it) } }
         showCard(dark = true, width = 280, fontScale = 2f, viewportHeight = 480)
         compose.onNodeWithText("查看全部").assertIsDisplayed().assertHasClickAction()
-        val countLayouts = mutableListOf<TextLayoutResult>()
-        compose.onNodeWithText("3 项未完成").performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(countLayouts) }
-        assertEquals(1, countLayouts.single().lineCount)
+        compose.onNodeWithText("3 项未完成").assertDoesNotExist()
+        val titleLayouts = mutableListOf<TextLayoutResult>()
+        compose.onNodeWithText("今日待办").performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(titleLayouts) }
+        assertEquals(1, titleLayouts.single().lineCount)
         capture("narrow-large-font-dark")
         dao.rows.value.forEach { todo ->
             compose.onNodeWithContentDescription("完成状态：${todo.title}").performScrollTo().assertIsDisplayed()
@@ -233,7 +234,6 @@ class TodoHomeSectionTest {
     }
 
     @Test fun dashboardKeepsUsageTodosModesAndAppOrder() {
-        seed(1)
         compose.setContent {
             TimeManagerTheme { Surface { HomeDashboard(
                 todoViewModel = viewModel, onOpenTodos = {},
@@ -243,6 +243,11 @@ class TodoHomeSectionTest {
                 onOpenStatistics = {}, focusState = FocusModeState(), onOpenFocus = {}, onOpenDeepFocus = {},
             ) } }
         }
+        compose.onNodeWithText("写下一件想完成的事").assertIsDisplayed()
+        compose.onNodeWithText("0 项未完成").assertDoesNotExist()
+        capture("dashboard-empty-light")
+        seed(1)
+        compose.onNodeWithText("待办 1").assertIsDisplayed()
         val usage = compose.onNodeWithText("今日已使用").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
         val todos = compose.onNodeWithText("今日待办").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
         val mode = compose.onNodeWithText("专注模式").assertIsDisplayed().fetchSemanticsNode().boundsInRoot

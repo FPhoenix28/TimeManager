@@ -1,5 +1,6 @@
 package com.example.timemanager.ui.statistics
 
+import androidx.annotation.DrawableRes
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -37,6 +38,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.unit.dp
 import com.example.timemanager.R
+import com.example.timemanager.ui.components.FeatureArtwork
 import com.example.timemanager.ui.components.AppIcon
 import com.example.timemanager.ui.components.FullScreenError
 import com.example.timemanager.ui.components.FullScreenLoading
@@ -99,7 +101,12 @@ private fun StatisticsContent(
         ),
     ) {
         item("header") {
-            StatisticsTopBar(onBack = onBack, title = "使用统计", showBack = showBack)
+            StatisticsTopBar(
+                onBack = onBack,
+                title = "使用统计",
+                showBack = showBack,
+                artwork = R.drawable.ic_tm_usage,
+            )
         }
         item("period") {
             PeriodSelector(
@@ -243,6 +250,7 @@ internal fun StatisticsTopBar(
     onBack: () -> Unit,
     title: String,
     showBack: Boolean = true,
+    @DrawableRes artwork: Int? = null,
 ) {
     Row(
         modifier = Modifier
@@ -258,6 +266,7 @@ internal fun StatisticsTopBar(
                 )
             }
         }
+        artwork?.let { FeatureArtwork(it, Modifier.size(40.dp)) }
         Text(text = title, style = MaterialTheme.typography.titleLarge)
     }
 }

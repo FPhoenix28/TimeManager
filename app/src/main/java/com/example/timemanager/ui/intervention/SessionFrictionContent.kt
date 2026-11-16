@@ -6,9 +6,11 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -23,14 +25,17 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.example.timemanager.R
 import com.example.timemanager.data.model.LimitInterventionRequest
 import com.example.timemanager.data.model.SessionGatePhase
 import com.example.timemanager.domain.todo.TodoSummary
 import com.example.timemanager.domain.intervention.InterventionPresentation
 import com.example.timemanager.domain.intervention.InterventionPresentationPolicy
 import com.example.timemanager.ui.components.CalmPanelTone
+import com.example.timemanager.ui.components.FeatureArtwork
 import com.example.timemanager.ui.components.containerColor
 import com.example.timemanager.ui.theme.TimeManagerSpacing
 import kotlinx.coroutines.delay
@@ -67,6 +72,8 @@ internal fun SessionFrictionContent(
     val actionsEnabled = InterventionPresentationPolicy.sessionActionsAvailable(request, remaining)
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val compactHeight = maxHeight < 520.dp
+        val fontScale = LocalDensity.current.fontScale
+        val showPauseArtwork = maxWidth >= 280.dp && fontScale <= 1.3f
         ResponsiveInterventionScaffold(
             containerColor = CalmPanelTone.INFORMATION.containerColor,
             contentColor = MaterialTheme.colorScheme.onSurface,
@@ -77,9 +84,23 @@ internal fun SessionFrictionContent(
             panelPadding = if (confirming && compactHeight) TimeManagerSpacing.medium else TimeManagerSpacing.large,
             header = {
                 if (!confirming) {
-                    Text("先停一下",
-                        style = if (compactHeight) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium,
-                        modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(TimeManagerSpacing.extraSmall, Alignment.CenterHorizontally),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (showPauseArtwork) {
+                            FeatureArtwork(
+                                R.drawable.ic_tm_session_pause_refined,
+                                Modifier.size(if (compactHeight) 36.dp else 44.dp),
+                            )
+                        }
+                        Text(
+                            "先停一下",
+                            style = if (compactHeight) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
                 }
             },
             mainContent = {
@@ -149,15 +170,60 @@ internal fun SessionFrictionContent(
                             Text("5 分钟后静心")
                         }
                     }
-                    OutlinedButton(onClick = onStayHome, enabled = actionsEnabled, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (reentry) "留在桌面" else "返回桌面")
-                    }
-                    TextButton(onClick = onContinue, enabled = actionsEnabled, modifier = Modifier.fillMaxWidth()) {
-                        Text("继续使用")
-                    }
+                    SessionSecondaryActions(
+                        homeLabel = if (reentry) "留在桌面" else "返回桌面",
+                        enabled = actionsEnabled,
+                        onStayHome = onStayHome,
+                        onContinue = onContinue,
+                    )
                 }
             },
         )
+    }
+}
+
+@Composable
+private fun SessionSecondaryActions(
+    homeLabel: String,
+    enabled: Boolean,
+    onStayHome: () -> Unit,
+    onContinue: () -> Unit,
+) {
+    val homeButton: @Composable (Modifier) -> Unit = { modifier ->
+        OutlinedButton(
+            onClick = onStayHome,
+            enabled = enabled,
+            modifier = modifier.heightIn(min = 48.dp),
+            contentPadding = PaddingValues(TimeManagerSpacing.small),
+        ) {
+            Text(homeLabel, textAlign = TextAlign.Center)
+        }
+    }
+    val continueButton: @Composable (Modifier) -> Unit = { modifier ->
+        TextButton(
+            onClick = onContinue,
+            enabled = enabled,
+            modifier = modifier.heightIn(min = 48.dp),
+            contentPadding = PaddingValues(TimeManagerSpacing.small),
+        ) {
+            Text("继续使用", textAlign = TextAlign.Center)
+        }
+    }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if (maxWidth >= 200.dp && LocalDensity.current.fontScale <= 1.3f) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(TimeManagerSpacing.small),
+            ) {
+                homeButton(Modifier.weight(1f))
+                continueButton(Modifier.weight(1f))
+            }
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.small)) {
+                homeButton(Modifier.fillMaxWidth())
+                continueButton(Modifier.fillMaxWidth())
+            }
+        }
     }
 }
 

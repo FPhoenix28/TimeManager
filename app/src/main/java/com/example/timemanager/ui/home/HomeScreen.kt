@@ -37,6 +37,7 @@ import com.example.timemanager.data.model.FocusModeState
 import com.example.timemanager.data.model.FocusModeType
 import com.example.timemanager.ui.focus.FocusCountdown
 import com.example.timemanager.ui.components.AppIcon
+import com.example.timemanager.ui.components.FeatureArtwork
 import com.example.timemanager.ui.components.EmptyState
 import com.example.timemanager.ui.components.FullScreenError
 import com.example.timemanager.ui.components.FullScreenLoading
@@ -256,7 +257,7 @@ private fun FocusModeEntries(
                 ModeEntry(
                     title = "专注模式",
                     description = if (focusState.isActive()) "专注进行中" else "专注已结束",
-                    icon = R.drawable.ic_focus,
+                    icon = R.drawable.ic_tm_focus,
                     onClick = onOpenFocus,
                     endTimeMillis = focusState.endTimeMillis.takeIf { focusState.isActive() },
                 )
@@ -269,7 +270,7 @@ private fun FocusModeEntries(
             FocusModeType.DEEP_FOCUS -> ModeEntry(
                 title = "静心模式",
                 description = if (focusState.isDeepFocusCompleted()) "静心结束" else "静心进行中",
-                icon = R.drawable.ic_leaf,
+                icon = R.drawable.ic_tm_deep_focus,
                 onClick = onOpenDeepFocus,
                 endTimeMillis = focusState.endTimeMillis.takeIf { focusState.isDeepFocusActive() },
             )
@@ -278,13 +279,13 @@ private fun FocusModeEntries(
                     val largeFont = LocalDensity.current.fontScale > 1.25f
                     if (maxWidth < 300.dp || largeFont) {
                         Column(verticalArrangement = Arrangement.spacedBy(TimeManagerSpacing.small)) {
-                            ModeEntry("专注模式", "屏蔽分心应用", R.drawable.ic_focus, onOpenFocus)
-                            ModeEntry("静心模式", "暂时离开手机", R.drawable.ic_leaf, onOpenDeepFocus)
+                            ModeEntry("专注模式", "屏蔽分心应用", R.drawable.ic_tm_focus, onOpenFocus)
+                            ModeEntry("静心模式", "暂时离开手机", R.drawable.ic_tm_deep_focus, onOpenDeepFocus)
                         }
                     } else {
                         Row(horizontalArrangement = Arrangement.spacedBy(TimeManagerSpacing.small)) {
-                            ModeEntry("专注模式", "屏蔽分心应用", R.drawable.ic_focus, onOpenFocus, Modifier.weight(1f))
-                            ModeEntry("静心模式", "暂时离开手机", R.drawable.ic_leaf, onOpenDeepFocus, Modifier.weight(1f))
+                            ModeEntry("专注模式", "屏蔽分心应用", R.drawable.ic_tm_focus, onOpenFocus, Modifier.weight(1f))
+                            ModeEntry("静心模式", "暂时离开手机", R.drawable.ic_tm_deep_focus, onOpenDeepFocus, Modifier.weight(1f))
                         }
                     }
                 }
@@ -309,9 +310,8 @@ private fun ModeEntry(
     ) {
         Row(Modifier.fillMaxWidth().padding(TimeManagerSpacing.compact),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(TimeManagerSpacing.small)) {
-            Icon(painterResource(icon), null, modifier = Modifier.size(TimeManagerSpacing.large),
-                tint = MaterialTheme.colorScheme.primary)
+            horizontalArrangement = Arrangement.spacedBy(TimeManagerSpacing.extraSmall)) {
+            FeatureArtwork(icon, Modifier.size(40.dp))
             Column(Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.titleSmall)
                 Text(description, style = MaterialTheme.typography.bodySmall,
