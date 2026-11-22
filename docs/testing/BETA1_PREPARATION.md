@@ -53,3 +53,21 @@ Owner 需要重点执行 P0，尤其是准备后自动启动完整三十分钟�
 Android 单色主题图标、主动通知升级、锁屏待办和课堂模式继续暂缓。
 
 本轮手机操作、Release 构建、push、merge、master 和版本号修改均为 NO。正式安装包和签名文件保持原状。
+
+## 2026-11-22 Launcher 迭代
+
+测试包为 `Beta1/TimeManager-Beta1-launcher-final-debug.apk`，保存在项目外的 Android 构建目录。完整本地路径与验证结果见同目录的 `TimeManager-Beta1-launcher-final-debug.build-info.json`。
+
+| 项目 | 值 |
+| --- | --- |
+| APK 源码提交 | `3a2d4adc783501ec4970483ddc578a32c0216323` |
+| applicationId | `com.fphoenix28.timemanager.debug` |
+| versionName / versionCode | `0.9.0-dev` / `3` |
+| 大小 | 15,814,865 字节 |
+| SHA-256 | `d2b3adccd86d7846f318faa63ffeb7a2389abbc8b5bbcd255e8138a90cc3fee2` |
+
+最终 Launcher 图标从已核验母版去除最外围金色圆角方框与描边光晕，保留内部金色圆形时钟及刻度、星芒、沙漏、莲花和光轨。深紫黑背景延伸至系统遮罩边缘。两份自适应 XML 共用同一张位图，五档密度的备用图标使用同一构图。
+
+在源码提交上重新执行完整 Debug 测试，654 项通过，其中 4 项为 API 26 和 35 的 Launcher 资源加载及遮罩渲染。Debug 构建、APK v2 签名验证和 `git diff --check` 通过。Gradle 确认现有 Debug 构建仍有效，交付 APK 与构建输出逐字节一致。包内 11 张图标的像素均与当前源码资源一致。随后更新的测试记录只含文档。
+
+圆形、圆角方形、超椭圆和 48dp 的主机渲染已检查。vivo X200s 上的桌面遮罩、日常壁纸下的辨识度及其余 Beta 1 真机项目待 owner 验收，结果由 owner 填入[真机清单](BETA1_DEVICE_ACCEPTANCE.md)。
