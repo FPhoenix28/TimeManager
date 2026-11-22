@@ -9,12 +9,13 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.drawable.AdaptiveIconDrawable
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import androidx.test.core.app.ApplicationProvider
 import com.example.timemanager.R
 import java.io.File
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -28,15 +29,19 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class LauncherIconResourceTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
-    private val output = File("build/reports/launcher-icon/api-${Build.VERSION.SDK_INT}")
+    private val output = File("build/reports/launcher-icon-final/api-${Build.VERSION.SDK_INT}")
 
-    @Test fun manifestIconsResolveToApprovedAdaptiveArtwork() {
+    @Test fun manifestIconsResolveToCroppedArtworkWithTransparentForeground() {
         assertEquals(R.mipmap.ic_launcher, context.applicationInfo.icon)
         for (resource in listOf(R.mipmap.ic_launcher, R.mipmap.ic_launcher_round)) {
             val drawable = context.getDrawable(resource)
             assertTrue(drawable is AdaptiveIconDrawable)
             val adaptive = drawable as AdaptiveIconDrawable
-            assertNotNull(adaptive.background)
+            val artwork = (adaptive.background as BitmapDrawable).bitmap
+            assertEquals(432, artwork.width)
+            assertEquals(432, artwork.height)
+            assertEquals(255, Color.alpha(artwork.getPixel(0, 0)))
+            assertEquals(Color.TRANSPARENT, (adaptive.foreground as ColorDrawable).color)
             if (Build.VERSION.SDK_INT >= 33) assertEquals(null, adaptive.monochrome)
             val bitmap = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888)
             adaptive.setBounds(0, 0, 256, 256)
@@ -56,7 +61,7 @@ class LauncherIconResourceTest {
             color = Color.rgb(235, 231, 240)
             textSize = 22f
         }
-        canvas.drawText("Approved artwork / actual Android resource layers", 36f, 40f, text)
+        canvas.drawText("TimeManager / original clock artwork without the outer frame", 36f, 40f, text)
         canvas.drawText("256px masks + 48dp at 2x density (96px, shown at native size)", 36f, 74f, text)
         for ((index, mask) in listOf("circle", "rounded-square", "squircle").withIndex()) {
             val large = renderMask(mask, 256)
